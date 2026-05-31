@@ -1,0 +1,10 @@
+{
+  "id": "distill-md",
+  "name": "Distill — Convert to Markdown",
+  "version": "0.1.0",
+  "minAppVersion": "1.4.0",
+  "description": "Right-click any attachment (PDF, Word, Excel, PowerPoint, email, image) to convert it to clean Markdown with YAML frontmatter — 100% on your Mac. Powered by the Distill engine.",
+  "author": "Distill",
+  "authorUrl": "https://github.com/YOUR-REPO/distill",
+  "isDesktopOnly": true
+}
