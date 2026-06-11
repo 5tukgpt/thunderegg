@@ -2,3 +2,5 @@ node_modules/
 main.js.map
 *.log
 .DS_Store
+.obsidian/
+data.json

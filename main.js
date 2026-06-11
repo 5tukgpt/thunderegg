@@ -30,7 +30,7 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // main.ts
 var main_exports = {};
 __export(main_exports, {
-  default: () => DistillPlugin
+  default: () => DistillBridgePlugin
 });
 module.exports = __toCommonJS(main_exports);
 var import_obsidian = require("obsidian");
@@ -38,6 +38,7 @@ var import_child_process = require("child_process");
 var import_util = require("util");
 var os = __toESM(require("os"));
 var path = __toESM(require("path"));
+var fs = __toESM(require("fs"));
 var execAsync = (0, import_util.promisify)(import_child_process.exec);
 var CONVERTIBLE = /* @__PURE__ */ new Set([
   "pdf",
@@ -61,15 +62,45 @@ var CONVERTIBLE = /* @__PURE__ */ new Set([
   "bmp",
   "webp"
 ]);
+var GRADE_META = {
+  vapor: { label: "Vapor", icon: "\u2601\uFE0F", css: "vapor" },
+  // ☁️
+  distillate: { label: "Distillate", icon: "\u{1F4A7}", css: "distillate" },
+  // 💧
+  essence: { label: "Essence", icon: "\u{1F48E}", css: "essence" }
+  // 💎
+};
+var VALID_GRADES = /* @__PURE__ */ new Set(["vapor", "distillate", "essence"]);
 var DEFAULT_SETTINGS = {
   enginePath: `${os.homedir()}/Library/Application Support/MarkItDownDroplet/convert.sh`,
   frontmatter: true,
-  openAfter: true
+  openAfter: true,
+  refineryEnabled: false,
+  vaultRoot: "",
+  condenserThreshold: 5,
+  showGradeBadges: true,
+  showBondCounts: true,
+  showCondenserLinks: true
 };
-var DistillPlugin = class extends import_obsidian.Plugin {
+function emptyBondGraph() {
+  return { outgoing: /* @__PURE__ */ new Map(), incoming: /* @__PURE__ */ new Map() };
+}
+var DistillBridgePlugin = class extends import_obsidian.Plugin {
+  constructor() {
+    super(...arguments);
+    this.refineryBarEl = null;
+    /* State */
+    this.distillAvailable = false;
+    this.bonds = emptyBondGraph();
+  }
+  /* ── Lifecycle ──────────────────────────────────────────────── */
   async onload() {
     await this.loadSettings();
-    this.addSettingTab(new DistillSettingTab(this.app, this));
+    this.addSettingTab(new DistillBridgeSettingTab(this.app, this));
+    this.statusDistill = this.addStatusBarItem();
+    this.statusRefinery = this.addStatusBarItem();
+    await this.checkDistillAvailable();
+    this.renderDistillStatus();
     this.registerEvent(
       this.app.workspace.on("file-menu", (menu, file) => {
         if (file instanceof import_obsidian.TFile && CONVERTIBLE.has(file.extension.toLowerCase())) {
@@ -84,8 +115,8 @@ var DistillPlugin = class extends import_obsidian.Plugin {
       })
     );
     this.addCommand({
-      id: "distill-convert-active",
-      name: "Convert active file to Markdown",
+      id: "distill-convert-file",
+      name: "Convert file",
       checkCallback: (checking) => {
         const f = this.app.workspace.getActiveFile();
         const ok = !!f && CONVERTIBLE.has(f.extension.toLowerCase());
@@ -94,10 +125,74 @@ var DistillPlugin = class extends import_obsidian.Plugin {
         return ok;
       }
     });
+    this.addCommand({
+      id: "distill-convert-clipboard",
+      name: "Convert clipboard",
+      callback: () => this.convertClipboard()
+    });
+    if (this.settings.refineryEnabled) {
+      this.bootRefinery();
+    }
+    this.registerEvent(
+      this.app.workspace.on("active-leaf-change", () => {
+        this.renderRefineryStatus();
+        this.decorateActiveLeaf();
+      })
+    );
+    this.registerEvent(
+      this.app.metadataCache.on("resolved", () => {
+        if (this.settings.refineryEnabled) {
+          this.buildBondGraph();
+          this.renderRefineryStatus();
+          this.decorateActiveLeaf();
+        }
+      })
+    );
+    this.registerInterval(
+      window.setInterval(() => {
+        this.checkDistillAvailable().then(() => this.renderDistillStatus());
+      }, 6e4)
+    );
   }
+  onunload() {
+    this.stripRefineryBar();
+  }
+  /* ═════════════════════════════════════════════════════════════════
+     Distill availability
+     ═════════════════════════════════════════════════════════════════ */
+  async checkDistillAvailable() {
+    try {
+      await fs.promises.access(this.settings.enginePath, fs.constants.X_OK);
+      this.distillAvailable = true;
+    } catch {
+      this.distillAvailable = false;
+    }
+  }
+  renderDistillStatus() {
+    this.statusDistill.empty();
+    const dot = this.distillAvailable ? "\u{1F7E2}" : "\u{1F534}";
+    const label = this.distillAvailable ? "Ready" : "Unavailable";
+    this.statusDistill.createSpan({
+      cls: "distill-status",
+      text: `\u2697\uFE0F ${label} ${dot}`
+      // ⚗️
+    });
+    this.statusDistill.setAttribute(
+      "aria-label",
+      this.distillAvailable ? `Distill engine: ${this.settings.enginePath}` : "Distill engine not found \u2014 check Settings \u2192 Distill"
+    );
+  }
+  /* ═════════════════════════════════════════════════════════════════
+     File conversion
+     ═════════════════════════════════════════════════════════════════ */
+  /** Resolve a vault-relative TFile to an absolute filesystem path. */
   absPath(file) {
     const base = this.app.vault.adapter.getBasePath?.() ?? "";
     return path.join(base, file.path);
+  }
+  /** Shell-escape a single argument (POSIX single-quote convention). */
+  shellQuote(s) {
+    return "'" + s.replace(/'/g, "'\\''") + "'";
   }
   async convertFile(file) {
     const engine = this.settings.enginePath;
@@ -106,29 +201,34 @@ var DistillPlugin = class extends import_obsidian.Plugin {
     try {
       const env = { ...process.env };
       if (!this.settings.frontmatter)
-        env.DISTILL_FRONTMATTER = "0";
-      await execAsync(`"${engine}" "${full}"`, { env });
+        env["DISTILL_FRONTMATTER"] = "0";
+      await execAsync(`${this.shellQuote(engine)} ${this.shellQuote(full)}`, { env });
       notice.hide();
-      new import_obsidian.Notice(`Distill: created ${file.name}.md`);
+      new import_obsidian.Notice(`\u2705 Distill: created ${file.name}.md`);
       if (this.settings.openAfter) {
         const mdPath = (0, import_obsidian.normalizePath)(`${file.path}.md`);
+        await sleep(300);
         const md = this.app.vault.getAbstractFileByPath(mdPath);
         if (md instanceof import_obsidian.TFile)
           this.app.workspace.getLeaf(true).openFile(md);
       }
     } catch (e) {
       notice.hide();
-      new import_obsidian.Notice(`Distill failed: ${e?.message ?? e}. Is the Distill app installed?`, 8e3);
+      new import_obsidian.Notice(
+        `\u274C Distill failed: ${e?.message ?? e}. Is the Distill app installed?`,
+        8e3
+      );
       console.error("[Distill]", e);
     }
   }
   async convertFolder(folder) {
     const targets = [];
     const walk = (f) => {
-      if (f instanceof import_obsidian.TFile && CONVERTIBLE.has(f.extension.toLowerCase()))
+      if (f instanceof import_obsidian.TFile && CONVERTIBLE.has(f.extension.toLowerCase())) {
         targets.push(f);
-      else if (f instanceof import_obsidian.TFolder)
+      } else if (f instanceof import_obsidian.TFolder) {
         f.children.forEach(walk);
+      }
     };
     walk(folder);
     if (targets.length === 0) {
@@ -141,16 +241,272 @@ var DistillPlugin = class extends import_obsidian.Plugin {
       try {
         const env = { ...process.env };
         if (!this.settings.frontmatter)
-          env.DISTILL_FRONTMATTER = "0";
-        await execAsync(`"${this.settings.enginePath}" "${this.absPath(t)}"`, { env });
+          env["DISTILL_FRONTMATTER"] = "0";
+        await execAsync(
+          `${this.shellQuote(this.settings.enginePath)} ${this.shellQuote(this.absPath(t))}`,
+          { env }
+        );
         ok++;
       } catch (e) {
         console.error("[Distill]", t.path, e);
       }
     }
     notice.hide();
-    new import_obsidian.Notice(`Distill: converted ${ok}/${targets.length} files.`);
+    new import_obsidian.Notice(`\u2705 Distill: converted ${ok}/${targets.length} files.`);
   }
+  /* ═════════════════════════════════════════════════════════════════
+     Clipboard conversion
+     ═════════════════════════════════════════════════════════════════ */
+  async convertClipboard() {
+    let clipHtml = "";
+    let clipText = "";
+    try {
+      const electron = require("electron");
+      const cb = electron.clipboard ?? electron.remote?.clipboard;
+      if (cb) {
+        clipHtml = cb.readHTML?.() ?? "";
+        clipText = cb.readText?.() ?? "";
+      }
+    } catch {
+      try {
+        clipText = await navigator.clipboard.readText();
+      } catch {
+        new import_obsidian.Notice("\u274C Could not read clipboard.");
+        return;
+      }
+    }
+    const content = clipHtml.trim() || clipText.trim();
+    if (!content) {
+      new import_obsidian.Notice("Clipboard is empty.");
+      return;
+    }
+    const ext = clipHtml.trim() ? "html" : "txt";
+    const stamp = Date.now();
+    const tempName = `_distill_clip_${stamp}.${ext}`;
+    const tempPath = (0, import_obsidian.normalizePath)(tempName);
+    const notice = new import_obsidian.Notice("Distill: converting clipboard\u2026", 0);
+    try {
+      await this.app.vault.create(tempPath, content);
+      const tempFile = this.app.vault.getAbstractFileByPath(tempPath);
+      if (!(tempFile instanceof import_obsidian.TFile))
+        throw new Error("Could not create temp file");
+      const env = { ...process.env };
+      if (!this.settings.frontmatter)
+        env["DISTILL_FRONTMATTER"] = "0";
+      await execAsync(
+        `${this.shellQuote(this.settings.enginePath)} ${this.shellQuote(this.absPath(tempFile))}`,
+        { env }
+      );
+      await this.app.vault.delete(tempFile);
+      notice.hide();
+      const mdRawPath = (0, import_obsidian.normalizePath)(`${tempPath}.md`);
+      await sleep(400);
+      const mdFile = this.app.vault.getAbstractFileByPath(mdRawPath);
+      if (mdFile instanceof import_obsidian.TFile) {
+        const dateStr = (/* @__PURE__ */ new Date()).toISOString().slice(0, 16).replace("T", " ").replace(":", "-");
+        const niceName = `Clipboard ${dateStr}.md`;
+        const nicePath = (0, import_obsidian.normalizePath)(niceName);
+        await this.app.fileManager.renameFile(mdFile, nicePath);
+        new import_obsidian.Notice(`\u2705 Distill: created ${niceName}`);
+        if (this.settings.openAfter) {
+          const renamed = this.app.vault.getAbstractFileByPath(nicePath);
+          if (renamed instanceof import_obsidian.TFile) {
+            this.app.workspace.getLeaf(true).openFile(renamed);
+          }
+        }
+      } else {
+        new import_obsidian.Notice("\u2705 Clipboard converted (file may take a moment to appear).");
+      }
+    } catch (e) {
+      notice.hide();
+      try {
+        const tf = this.app.vault.getAbstractFileByPath(tempPath);
+        if (tf instanceof import_obsidian.TFile)
+          await this.app.vault.delete(tf);
+      } catch {
+      }
+      new import_obsidian.Notice(`\u274C Clipboard conversion failed: ${e?.message ?? e}`, 8e3);
+      console.error("[Distill]", e);
+    }
+  }
+  /* ═════════════════════════════════════════════════════════════════
+     Refinery — Grades · Bonds · Condensers
+     ═════════════════════════════════════════════════════════════════ */
+  /** Called once when Refinery is first enabled or on plugin load. */
+  bootRefinery() {
+    this.buildBondGraph();
+    this.renderRefineryStatus();
+    this.app.workspace.onLayoutReady(() => this.decorateActiveLeaf());
+  }
+  /** Tear down Refinery visuals. */
+  teardownRefinery() {
+    this.stripRefineryBar();
+    this.bonds = emptyBondGraph();
+    this.renderRefineryStatus();
+  }
+  /* ── Bond graph ─────────────────────────────────────────────── */
+  /**
+   * Build the Bond graph from Obsidian's `metadataCache.resolvedLinks`.
+   * Each resolved [[wikilink]] becomes a directed Bond.
+   * If `vaultRoot` is set, only files under that prefix are indexed.
+   */
+  buildBondGraph() {
+    const out = /* @__PURE__ */ new Map();
+    const inc = /* @__PURE__ */ new Map();
+    const resolved = this.app.metadataCache.resolvedLinks;
+    const root = this.settings.vaultRoot;
+    for (const [src, targets] of Object.entries(resolved)) {
+      if (root && !src.startsWith(root))
+        continue;
+      for (const tgt of Object.keys(targets)) {
+        if (root && !tgt.startsWith(root))
+          continue;
+        if (!out.has(src))
+          out.set(src, /* @__PURE__ */ new Set());
+        out.get(src).add(tgt);
+        if (!inc.has(tgt))
+          inc.set(tgt, /* @__PURE__ */ new Set());
+        inc.get(tgt).add(src);
+      }
+    }
+    this.bonds = { outgoing: out, incoming: inc };
+  }
+  /* ── Grade helpers ──────────────────────────────────────────── */
+  /** Read the `grade` frontmatter field of a markdown file. */
+  getGrade(file) {
+    const cache = this.app.metadataCache.getFileCache(file);
+    const raw = cache?.frontmatter?.["grade"];
+    return typeof raw === "string" && VALID_GRADES.has(raw) ? raw : null;
+  }
+  /* ── Bond helpers ───────────────────────────────────────────── */
+  /** Total bond count = outgoing links + incoming links. */
+  getBondCount(filePath) {
+    return (this.bonds.outgoing.get(filePath)?.size ?? 0) + (this.bonds.incoming.get(filePath)?.size ?? 0);
+  }
+  /* ── Condenser helpers ──────────────────────────────────────── */
+  /** A note is a Condenser when its bond count meets the threshold. */
+  isCondenser(filePath) {
+    return this.getBondCount(filePath) >= this.settings.condenserThreshold;
+  }
+  /** Return Condenser notes that link TO the given file. */
+  getReferencingCondensers(filePath) {
+    const incoming = this.bonds.incoming.get(filePath);
+    if (!incoming)
+      return [];
+    return [...incoming].filter((src) => this.isCondenser(src));
+  }
+  /* ── Status-bar Refinery section ────────────────────────────── */
+  renderRefineryStatus() {
+    this.statusRefinery.empty();
+    if (!this.settings.refineryEnabled)
+      return;
+    const file = this.app.workspace.getActiveFile();
+    if (!file || file.extension !== "md")
+      return;
+    const grade = this.getGrade(file);
+    const bondCount = this.getBondCount(file.path);
+    const condenser = this.isCondenser(file.path);
+    const wrap = this.statusRefinery.createSpan({ cls: "distill-refinery-status" });
+    if (grade && this.settings.showGradeBadges) {
+      const m = GRADE_META[grade];
+      if (m) {
+        wrap.createSpan({
+          cls: `distill-grade distill-grade-${m.css}`,
+          text: `${m.icon} ${m.label}`
+        });
+      }
+    }
+    if (this.settings.showBondCounts) {
+      wrap.createSpan({
+        cls: "distill-bonds",
+        text: `\u{1F517} ${bondCount}`
+        // 🔗
+      });
+    }
+    if (condenser) {
+      wrap.createSpan({
+        cls: "distill-condenser-badge",
+        text: "\u2697\uFE0F Condenser"
+        // ⚗️
+      });
+    }
+  }
+  /* ── Refinery info bar inside the active leaf ────────────────── */
+  decorateActiveLeaf() {
+    this.stripRefineryBar();
+    if (!this.settings.refineryEnabled)
+      return;
+    const file = this.app.workspace.getActiveFile();
+    if (!file || file.extension !== "md")
+      return;
+    const view = this.app.workspace.getActiveViewOfType(import_obsidian.MarkdownView);
+    if (!view)
+      return;
+    const grade = this.getGrade(file);
+    const bondCount = this.getBondCount(file.path);
+    const condenser = this.isCondenser(file.path);
+    const condenserRefs = this.settings.showCondenserLinks ? this.getReferencingCondensers(file.path) : [];
+    if (!grade && bondCount === 0 && condenserRefs.length === 0)
+      return;
+    const bar = createEl("div", { cls: "distill-refinery-bar" });
+    if (grade && this.settings.showGradeBadges) {
+      const m = GRADE_META[grade];
+      if (m) {
+        bar.createSpan({
+          cls: `distill-grade distill-grade-${m.css}`,
+          text: `${m.icon} ${m.label}`
+        });
+      }
+    }
+    if (this.settings.showBondCounts && bondCount > 0) {
+      bar.createSpan({
+        cls: "distill-bonds",
+        text: `\u{1F517} ${bondCount} bond${bondCount === 1 ? "" : "s"}`
+      });
+    }
+    if (condenser) {
+      bar.createSpan({
+        cls: "distill-condenser-badge",
+        text: "\u2697\uFE0F Condenser"
+      });
+    }
+    if (condenserRefs.length > 0) {
+      const linksEl = bar.createSpan({ cls: "distill-condenser-links" });
+      linksEl.createSpan({ text: "Hub: " });
+      condenserRefs.forEach((cPath, i) => {
+        const name = cPath.replace(/\.md$/, "").split("/").pop() ?? cPath;
+        const a = linksEl.createEl("a", {
+          cls: "internal-link",
+          text: name,
+          href: cPath
+        });
+        a.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          const target = this.app.vault.getAbstractFileByPath(cPath);
+          if (target instanceof import_obsidian.TFile) {
+            this.app.workspace.getLeaf(false).openFile(target);
+          }
+        });
+        if (i < condenserRefs.length - 1) {
+          linksEl.createSpan({ text: ", " });
+        }
+      });
+    }
+    const viewContent = view.containerEl.querySelector(".view-content");
+    if (viewContent) {
+      viewContent.insertBefore(bar, viewContent.firstChild);
+      this.refineryBarEl = bar;
+    }
+  }
+  /** Remove Refinery bar from the DOM. */
+  stripRefineryBar() {
+    this.refineryBarEl?.remove();
+    this.refineryBarEl = null;
+    document.querySelectorAll(".distill-refinery-bar").forEach((el) => el.remove());
+  }
+  /* ═════════════════════════════════════════════════════════════════
+     Persistence
+     ═════════════════════════════════════════════════════════════════ */
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
   }
@@ -158,7 +514,10 @@ var DistillPlugin = class extends import_obsidian.Plugin {
     await this.saveData(this.settings);
   }
 };
-var DistillSettingTab = class extends import_obsidian.PluginSettingTab {
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+var DistillBridgeSettingTab = class extends import_obsidian.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -166,22 +525,98 @@ var DistillSettingTab = class extends import_obsidian.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h3", { text: "Distill \u2014 Convert to Markdown" });
+    containerEl.createEl("h2", { text: "Distill Bridge" });
     containerEl.createEl("p", {
-      text: "Converts attachments on-device via the Distill engine. Requires the Distill macOS app (or its helper scripts) installed.",
+      text: "Converts attachments on-device via the Distill engine. The Refinery adds note-maturity Grades, wikilink Bonds, and hub-note Condensers to your vault.",
       cls: "setting-item-description"
     });
-    new import_obsidian.Setting(containerEl).setName("Engine path").setDesc("Path to the Distill convert.sh script.").addText((t) => t.setPlaceholder(DEFAULT_SETTINGS.enginePath).setValue(this.plugin.settings.enginePath).onChange(async (v) => {
-      this.plugin.settings.enginePath = v.trim();
-      await this.plugin.saveSettings();
-    }));
-    new import_obsidian.Setting(containerEl).setName("Add YAML frontmatter").setDesc("Prepend title/source/type/tags so notes drop straight into your vault with Properties.").addToggle((t) => t.setValue(this.plugin.settings.frontmatter).onChange(async (v) => {
-      this.plugin.settings.frontmatter = v;
-      await this.plugin.saveSettings();
-    }));
-    new import_obsidian.Setting(containerEl).setName("Open after converting").setDesc("Open the resulting .md in a new pane.").addToggle((t) => t.setValue(this.plugin.settings.openAfter).onChange(async (v) => {
-      this.plugin.settings.openAfter = v;
-      await this.plugin.saveSettings();
-    }));
+    containerEl.createEl("h3", { text: "Conversion" });
+    new import_obsidian.Setting(containerEl).setName("Engine path").setDesc("Full path to the Distill convert.sh helper script.").addText(
+      (t) => t.setPlaceholder(DEFAULT_SETTINGS.enginePath).setValue(this.plugin.settings.enginePath).onChange(async (v) => {
+        this.plugin.settings.enginePath = v.trim();
+        await this.plugin.saveSettings();
+        await this.plugin.checkDistillAvailable();
+        this.plugin.renderDistillStatus();
+      })
+    );
+    new import_obsidian.Setting(containerEl).setName("Add YAML frontmatter").setDesc(
+      "Prepend title / source / type / tags so converted notes land with full Properties."
+    ).addToggle(
+      (t) => t.setValue(this.plugin.settings.frontmatter).onChange(async (v) => {
+        this.plugin.settings.frontmatter = v;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian.Setting(containerEl).setName("Open after converting").setDesc("Automatically open the resulting .md in a new pane.").addToggle(
+      (t) => t.setValue(this.plugin.settings.openAfter).onChange(async (v) => {
+        this.plugin.settings.openAfter = v;
+        await this.plugin.saveSettings();
+      })
+    );
+    containerEl.createEl("h3", { text: "Refinery" });
+    const refineryDesc = containerEl.createEl("div", {
+      cls: "setting-item-description distill-refinery-desc"
+    });
+    refineryDesc.createEl("p", {
+      text: "The Refinery is Distill\u2019s premium knowledge-management layer. It introduces four concepts:"
+    });
+    const ul = refineryDesc.createEl("ul");
+    ul.createEl("li").innerHTML = "<strong>Grades</strong> \u2014 note maturity: <em>Vapor \u2192 Distillate \u2192 Essence</em>";
+    ul.createEl("li").innerHTML = "<strong>Bonds</strong> \u2014 connections discovered via <code>[[wikilinks]]</code>";
+    ul.createEl("li").innerHTML = "<strong>Condensers</strong> \u2014 hub notes with many Bonds";
+    ul.createEl("li").innerHTML = "<strong>Fractions</strong> \u2014 folder-level grouping of related notes";
+    new import_obsidian.Setting(containerEl).setName("Enable Refinery").setDesc("Show Grade badges, Bond counts, and Condenser links in the UI.").addToggle(
+      (t) => t.setValue(this.plugin.settings.refineryEnabled).onChange(async (v) => {
+        this.plugin.settings.refineryEnabled = v;
+        await this.plugin.saveSettings();
+        if (v) {
+          this.plugin.bootRefinery();
+        } else {
+          this.plugin.teardownRefinery();
+        }
+      })
+    );
+    new import_obsidian.Setting(containerEl).setName("Vault root for bond discovery").setDesc(
+      'Limit bond scanning to a subfolder (e.g. "Notes"). Leave empty to scan the entire vault.'
+    ).addText(
+      (t) => t.setPlaceholder("(entire vault)").setValue(this.plugin.settings.vaultRoot).onChange(async (v) => {
+        this.plugin.settings.vaultRoot = v.trim();
+        await this.plugin.saveSettings();
+        if (this.plugin.settings.refineryEnabled) {
+          this.plugin.buildBondGraph();
+        }
+      })
+    );
+    new import_obsidian.Setting(containerEl).setName("Condenser threshold").setDesc(
+      "Minimum number of Bonds for a note to be flagged as a Condenser (hub note)."
+    ).addSlider(
+      (s) => s.setLimits(2, 30, 1).setValue(this.plugin.settings.condenserThreshold).setDynamicTooltip().onChange(async (v) => {
+        this.plugin.settings.condenserThreshold = v;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian.Setting(containerEl).setName("Show grade badges").setDesc("Display Vapor / Distillate / Essence maturity indicators.").addToggle(
+      (t) => t.setValue(this.plugin.settings.showGradeBadges).onChange(async (v) => {
+        this.plugin.settings.showGradeBadges = v;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian.Setting(containerEl).setName("Show bond counts").setDesc("Display the number of wikilink connections for the active note.").addToggle(
+      (t) => t.setValue(this.plugin.settings.showBondCounts).onChange(async (v) => {
+        this.plugin.settings.showBondCounts = v;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian.Setting(containerEl).setName("Show condenser links").setDesc("When viewing a note, list which Condenser (hub) notes reference it.").addToggle(
+      (t) => t.setValue(this.plugin.settings.showCondenserLinks).onChange(async (v) => {
+        this.plugin.settings.showCondenserLinks = v;
+        await this.plugin.saveSettings();
+      })
+    );
+    containerEl.createEl("h3", { text: "Get Distill" });
+    const cta = containerEl.createEl("p", {
+      cls: "setting-item-description"
+    });
+    cta.innerHTML = 'Distill converts 20+ file types to clean Markdown \u2014 100% on your Mac. Download the free app or unlock the full Refinery at <a href="https://distill.dev">distill.dev</a>.';
   }
 };

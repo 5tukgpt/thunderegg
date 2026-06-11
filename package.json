@@ -1,6 +1,6 @@
 {
   "name": "distill-obsidian",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Convert attachments to Markdown inside Obsidian, on-device, via the Distill engine.",
   "main": "main.js",
   "scripts": {

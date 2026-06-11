@@ -1,10 +1,10 @@
 {
-  "id": "distill-md",
-  "name": "Distill — Convert to Markdown",
-  "version": "0.1.0",
+  "id": "distill-bridge",
+  "name": "Distill",
+  "version": "0.2.0",
   "minAppVersion": "1.4.0",
-  "description": "Right-click any attachment (PDF, Word, Excel, PowerPoint, email, image) to convert it to clean Markdown with YAML frontmatter — 100% on your Mac. Powered by the Distill engine.",
+  "description": "Convert any attachment to Markdown on-device, plus the Refinery — track note maturity (Grades), wikilink connections (Bonds), and hub notes (Condensers). Powered by the Distill engine.",
   "author": "Distill",
-  "authorUrl": "https://github.com/YOUR-REPO/distill",
+  "authorUrl": "https://github.com/5tukgpt/distill-obsidian-plugin",
   "isDesktopOnly": true
 }
