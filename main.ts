@@ -8,40 +8,18 @@ import { promisify } from "util";
 import * as os from "os";
 import * as path from "path";
 import * as fs from "fs";
+import {
+  CONVERTIBLE, GRADE_META, shellQuote, normalizeGrade,
+  BondGraph, emptyBondGraph, buildBondGraph,
+  bondCount, isCondenser, referencingCondensers,
+} from "./core";
 
 const execAsync = promisify(exec);
 
-/* ═══════════════════════════════════════════════════════════════════
-   Constants
-   ═══════════════════════════════════════════════════════════════════ */
-
-/** File extensions the Distill engine can convert. */
-const CONVERTIBLE = new Set([
-  "pdf", "docx", "xlsx", "xls", "pptx", "html", "htm", "csv", "json",
-  "eml", "msg", "png", "jpg", "jpeg", "tiff", "tif", "heic", "gif", "bmp", "webp",
-]);
-
-/* ── Refinery domain ──────────────────────────────────────────────── */
-
-/**
- * Grade — note maturity level (Refinery terminology).
- *   vapor      → raw capture, unprocessed
- *   distillate → reviewed and refined
- *   essence    → canonical, evergreen knowledge
+/*
+ * Core domain logic (CONVERTIBLE, Grades, Bond graph) lives in core.ts
+ * so it can be unit-tested without Obsidian. Keep main.ts to glue + UI.
  */
-interface GradeMeta {
-  label: string;
-  icon: string;
-  css: string;
-}
-
-const GRADE_META: Record<string, GradeMeta> = {
-  vapor:      { label: "Vapor",      icon: "☁️",  css: "vapor" },      // ☁️
-  distillate: { label: "Distillate", icon: "💧", css: "distillate" },  // 💧
-  essence:    { label: "Essence",    icon: "💎", css: "essence" },     // 💎
-};
-
-const VALID_GRADES = new Set(["vapor", "distillate", "essence"]);
 
 /* ═══════════════════════════════════════════════════════════════════
    Settings
@@ -72,21 +50,6 @@ const DEFAULT_SETTINGS: DistillBridgeSettings = {
   showBondCounts: true,
   showCondenserLinks: true,
 };
-
-/* ═══════════════════════════════════════════════════════════════════
-   Bond graph — built from Obsidian's resolved-link cache
-   ═══════════════════════════════════════════════════════════════════ */
-
-interface BondGraph {
-  /** filePath → set of paths it links TO */
-  outgoing: Map<string, Set<string>>;
-  /** filePath → set of paths that link TO it */
-  incoming: Map<string, Set<string>>;
-}
-
-function emptyBondGraph(): BondGraph {
-  return { outgoing: new Map(), incoming: new Map() };
-}
 
 /* ═══════════════════════════════════════════════════════════════════
    Plugin
@@ -232,9 +195,9 @@ export default class DistillBridgePlugin extends Plugin {
     return path.join(base, file.path);
   }
 
-  /** Shell-escape a single argument (POSIX single-quote convention). */
+  /** Shell-escape a single argument (see core.ts). */
   private shellQuote(s: string): string {
-    return "'" + s.replace(/'/g, "'\\''") + "'";
+    return shellQuote(s);
   }
 
   async convertFile(file: TFile): Promise<void> {
@@ -415,32 +378,12 @@ export default class DistillBridgePlugin extends Plugin {
 
   /* ── Bond graph ─────────────────────────────────────────────── */
 
-  /**
-   * Build the Bond graph from Obsidian's `metadataCache.resolvedLinks`.
-   * Each resolved [[wikilink]] becomes a directed Bond.
-   * If `vaultRoot` is set, only files under that prefix are indexed.
-   */
+  /** Build the Bond graph from Obsidian's resolved-link cache (see core.ts). */
   private buildBondGraph(): void {
-    const out = new Map<string, Set<string>>();
-    const inc = new Map<string, Set<string>>();
-    const resolved: Record<string, Record<string, number>> =
-      this.app.metadataCache.resolvedLinks;
-    const root = this.settings.vaultRoot;
-
-    for (const [src, targets] of Object.entries(resolved)) {
-      if (root && !src.startsWith(root)) continue;
-      for (const tgt of Object.keys(targets)) {
-        if (root && !tgt.startsWith(root)) continue;
-
-        if (!out.has(src)) out.set(src, new Set());
-        out.get(src)!.add(tgt);
-
-        if (!inc.has(tgt)) inc.set(tgt, new Set());
-        inc.get(tgt)!.add(src);
-      }
-    }
-
-    this.bonds = { outgoing: out, incoming: inc };
+    this.bonds = buildBondGraph(
+      this.app.metadataCache.resolvedLinks,
+      this.settings.vaultRoot,
+    );
   }
 
   /* ── Grade helpers ──────────────────────────────────────────── */
@@ -448,32 +391,30 @@ export default class DistillBridgePlugin extends Plugin {
   /** Read the `grade` frontmatter field of a markdown file. */
   private getGrade(file: TFile): string | null {
     const cache = this.app.metadataCache.getFileCache(file);
-    const raw   = cache?.frontmatter?.["grade"];
-    return typeof raw === "string" && VALID_GRADES.has(raw) ? raw : null;
+    return normalizeGrade(cache?.frontmatter?.["grade"]);
   }
 
   /* ── Bond helpers ───────────────────────────────────────────── */
 
   /** Total bond count = outgoing links + incoming links. */
   private getBondCount(filePath: string): number {
-    return (
-      (this.bonds.outgoing.get(filePath)?.size ?? 0) +
-      (this.bonds.incoming.get(filePath)?.size ?? 0)
-    );
+    return bondCount(this.bonds, filePath);
   }
 
   /* ── Condenser helpers ──────────────────────────────────────── */
 
   /** A note is a Condenser when its bond count meets the threshold. */
   private isCondenser(filePath: string): boolean {
-    return this.getBondCount(filePath) >= this.settings.condenserThreshold;
+    return isCondenser(this.bonds, filePath, this.settings.condenserThreshold);
   }
 
   /** Return Condenser notes that link TO the given file. */
   private getReferencingCondensers(filePath: string): string[] {
-    const incoming = this.bonds.incoming.get(filePath);
-    if (!incoming) return [];
-    return [...incoming].filter((src) => this.isCondenser(src));
+    return referencingCondensers(
+      this.bonds,
+      filePath,
+      this.settings.condenserThreshold,
+    );
   }
 
   /* ── Status-bar Refinery section ────────────────────────────── */

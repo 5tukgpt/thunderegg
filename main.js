@@ -39,7 +39,8 @@ var import_util = require("util");
 var os = __toESM(require("os"));
 var path = __toESM(require("path"));
 var fs = __toESM(require("fs"));
-var execAsync = (0, import_util.promisify)(import_child_process.exec);
+
+// core.ts
 var CONVERTIBLE = /* @__PURE__ */ new Set([
   "pdf",
   "docx",
@@ -62,6 +63,9 @@ var CONVERTIBLE = /* @__PURE__ */ new Set([
   "bmp",
   "webp"
 ]);
+function shellQuote(s) {
+  return "'" + s.replace(/'/g, "'\\''") + "'";
+}
 var GRADE_META = {
   vapor: { label: "Vapor", icon: "\u2601\uFE0F", css: "vapor" },
   // ☁️
@@ -71,6 +75,46 @@ var GRADE_META = {
   // 💎
 };
 var VALID_GRADES = /* @__PURE__ */ new Set(["vapor", "distillate", "essence"]);
+function normalizeGrade(raw) {
+  return typeof raw === "string" && VALID_GRADES.has(raw) ? raw : null;
+}
+function emptyBondGraph() {
+  return { outgoing: /* @__PURE__ */ new Map(), incoming: /* @__PURE__ */ new Map() };
+}
+function buildBondGraph(resolved, root) {
+  const out = /* @__PURE__ */ new Map();
+  const inc = /* @__PURE__ */ new Map();
+  for (const [src, targets] of Object.entries(resolved)) {
+    if (root && !src.startsWith(root))
+      continue;
+    for (const tgt of Object.keys(targets)) {
+      if (root && !tgt.startsWith(root))
+        continue;
+      if (!out.has(src))
+        out.set(src, /* @__PURE__ */ new Set());
+      out.get(src).add(tgt);
+      if (!inc.has(tgt))
+        inc.set(tgt, /* @__PURE__ */ new Set());
+      inc.get(tgt).add(src);
+    }
+  }
+  return { outgoing: out, incoming: inc };
+}
+function bondCount(bonds, filePath) {
+  return (bonds.outgoing.get(filePath)?.size ?? 0) + (bonds.incoming.get(filePath)?.size ?? 0);
+}
+function isCondenser(bonds, filePath, threshold) {
+  return bondCount(bonds, filePath) >= threshold;
+}
+function referencingCondensers(bonds, filePath, threshold) {
+  const incoming = bonds.incoming.get(filePath);
+  if (!incoming)
+    return [];
+  return [...incoming].filter((src) => isCondenser(bonds, src, threshold));
+}
+
+// main.ts
+var execAsync = (0, import_util.promisify)(import_child_process.exec);
 var DEFAULT_SETTINGS = {
   enginePath: `${os.homedir()}/Library/Application Support/MarkItDownDroplet/convert.sh`,
   frontmatter: true,
@@ -82,9 +126,6 @@ var DEFAULT_SETTINGS = {
   showBondCounts: true,
   showCondenserLinks: true
 };
-function emptyBondGraph() {
-  return { outgoing: /* @__PURE__ */ new Map(), incoming: /* @__PURE__ */ new Map() };
-}
 var DistillBridgePlugin = class extends import_obsidian.Plugin {
   constructor() {
     super(...arguments);
@@ -190,9 +231,9 @@ var DistillBridgePlugin = class extends import_obsidian.Plugin {
     const base = this.app.vault.adapter.getBasePath?.() ?? "";
     return path.join(base, file.path);
   }
-  /** Shell-escape a single argument (POSIX single-quote convention). */
+  /** Shell-escape a single argument (see core.ts). */
   shellQuote(s) {
-    return "'" + s.replace(/'/g, "'\\''") + "'";
+    return shellQuote(s);
   }
   async convertFile(file) {
     const engine = this.settings.enginePath;
@@ -345,55 +386,36 @@ var DistillBridgePlugin = class extends import_obsidian.Plugin {
     this.renderRefineryStatus();
   }
   /* ── Bond graph ─────────────────────────────────────────────── */
-  /**
-   * Build the Bond graph from Obsidian's `metadataCache.resolvedLinks`.
-   * Each resolved [[wikilink]] becomes a directed Bond.
-   * If `vaultRoot` is set, only files under that prefix are indexed.
-   */
+  /** Build the Bond graph from Obsidian's resolved-link cache (see core.ts). */
   buildBondGraph() {
-    const out = /* @__PURE__ */ new Map();
-    const inc = /* @__PURE__ */ new Map();
-    const resolved = this.app.metadataCache.resolvedLinks;
-    const root = this.settings.vaultRoot;
-    for (const [src, targets] of Object.entries(resolved)) {
-      if (root && !src.startsWith(root))
-        continue;
-      for (const tgt of Object.keys(targets)) {
-        if (root && !tgt.startsWith(root))
-          continue;
-        if (!out.has(src))
-          out.set(src, /* @__PURE__ */ new Set());
-        out.get(src).add(tgt);
-        if (!inc.has(tgt))
-          inc.set(tgt, /* @__PURE__ */ new Set());
-        inc.get(tgt).add(src);
-      }
-    }
-    this.bonds = { outgoing: out, incoming: inc };
+    this.bonds = buildBondGraph(
+      this.app.metadataCache.resolvedLinks,
+      this.settings.vaultRoot
+    );
   }
   /* ── Grade helpers ──────────────────────────────────────────── */
   /** Read the `grade` frontmatter field of a markdown file. */
   getGrade(file) {
     const cache = this.app.metadataCache.getFileCache(file);
-    const raw = cache?.frontmatter?.["grade"];
-    return typeof raw === "string" && VALID_GRADES.has(raw) ? raw : null;
+    return normalizeGrade(cache?.frontmatter?.["grade"]);
   }
   /* ── Bond helpers ───────────────────────────────────────────── */
   /** Total bond count = outgoing links + incoming links. */
   getBondCount(filePath) {
-    return (this.bonds.outgoing.get(filePath)?.size ?? 0) + (this.bonds.incoming.get(filePath)?.size ?? 0);
+    return bondCount(this.bonds, filePath);
   }
   /* ── Condenser helpers ──────────────────────────────────────── */
   /** A note is a Condenser when its bond count meets the threshold. */
   isCondenser(filePath) {
-    return this.getBondCount(filePath) >= this.settings.condenserThreshold;
+    return isCondenser(this.bonds, filePath, this.settings.condenserThreshold);
   }
   /** Return Condenser notes that link TO the given file. */
   getReferencingCondensers(filePath) {
-    const incoming = this.bonds.incoming.get(filePath);
-    if (!incoming)
-      return [];
-    return [...incoming].filter((src) => this.isCondenser(src));
+    return referencingCondensers(
+      this.bonds,
+      filePath,
+      this.settings.condenserThreshold
+    );
   }
   /* ── Status-bar Refinery section ────────────────────────────── */
   renderRefineryStatus() {
@@ -404,7 +426,7 @@ var DistillBridgePlugin = class extends import_obsidian.Plugin {
     if (!file || file.extension !== "md")
       return;
     const grade = this.getGrade(file);
-    const bondCount = this.getBondCount(file.path);
+    const bondCount2 = this.getBondCount(file.path);
     const condenser = this.isCondenser(file.path);
     const wrap = this.statusRefinery.createSpan({ cls: "distill-refinery-status" });
     if (grade && this.settings.showGradeBadges) {
@@ -419,7 +441,7 @@ var DistillBridgePlugin = class extends import_obsidian.Plugin {
     if (this.settings.showBondCounts) {
       wrap.createSpan({
         cls: "distill-bonds",
-        text: `\u{1F517} ${bondCount}`
+        text: `\u{1F517} ${bondCount2}`
         // 🔗
       });
     }
@@ -443,10 +465,10 @@ var DistillBridgePlugin = class extends import_obsidian.Plugin {
     if (!view)
       return;
     const grade = this.getGrade(file);
-    const bondCount = this.getBondCount(file.path);
+    const bondCount2 = this.getBondCount(file.path);
     const condenser = this.isCondenser(file.path);
     const condenserRefs = this.settings.showCondenserLinks ? this.getReferencingCondensers(file.path) : [];
-    if (!grade && bondCount === 0 && condenserRefs.length === 0)
+    if (!grade && bondCount2 === 0 && condenserRefs.length === 0)
       return;
     const bar = createEl("div", { cls: "distill-refinery-bar" });
     if (grade && this.settings.showGradeBadges) {
@@ -458,10 +480,10 @@ var DistillBridgePlugin = class extends import_obsidian.Plugin {
         });
       }
     }
-    if (this.settings.showBondCounts && bondCount > 0) {
+    if (this.settings.showBondCounts && bondCount2 > 0) {
       bar.createSpan({
         cls: "distill-bonds",
-        text: `\u{1F517} ${bondCount} bond${bondCount === 1 ? "" : "s"}`
+        text: `\u{1F517} ${bondCount2} bond${bondCount2 === 1 ? "" : "s"}`
       });
     }
     if (condenser) {
