@@ -639,6 +639,6 @@ var DistillBridgeSettingTab = class extends import_obsidian.PluginSettingTab {
     const cta = containerEl.createEl("p", {
       cls: "setting-item-description"
     });
-    cta.innerHTML = 'Distill converts 20+ file types to clean Markdown \u2014 100% on your Mac. Download the free app or unlock the full Refinery at <a href="https://distill.dev">distill.dev</a>.';
+    cta.innerHTML = 'Distill converts 20+ file types to clean Markdown \u2014 100% on your Mac. Download the free app or unlock the full Refinery at <a href="https://distillmd.dev">distillmd.dev</a>.';
   }
 };

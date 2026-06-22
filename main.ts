@@ -750,6 +750,6 @@ class DistillBridgeSettingTab extends PluginSettingTab {
     cta.innerHTML =
       "Distill converts 20+ file types to clean Markdown — 100% on your Mac. " +
       'Download the free app or unlock the full Refinery at ' +
-      '<a href="https://distill.dev">distill.dev</a>.';
+      '<a href="https://distillmd.dev">distillmd.dev</a>.';
   }
 }
