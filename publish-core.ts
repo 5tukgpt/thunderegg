@@ -107,7 +107,8 @@ export interface ProvenanceEntry {
   url: string;
   source_type: SourceType;
   license: License;
-  accessed?: string;   // optional
+  accessed?: string;       // optional
+  source_key?: string;     // normalized url — the overlap-corpus key (derived on export)
 }
 
 /** User-supplied publish metadata (not derived from the canvas). */
@@ -179,6 +180,21 @@ export function firstLine(text: string): string {
  */
 export function inferKind(text: string): NodeKind {
   return firstLine(text).endsWith("?") ? "question" : "concept";
+}
+
+/**
+ * Normalize a source URL into a stable overlap key (host + path; scheme, leading
+ * www., query, fragment, and trailing slash dropped; lowercased). This is THE
+ * key the overlap corpus joins on — "who distilled which source" — so it is
+ * derived on-device and carried in every exported map, no server required.
+ */
+export function sourceKey(url: string): string {
+  let u = (url ?? "").trim();
+  u = u.replace(/^[a-z][a-z0-9+.-]*:\/\//i, ""); // scheme://
+  u = u.replace(/^www\./i, "");
+  u = u.split(/[?#]/)[0];                          // drop query + fragment
+  u = u.replace(/\/+$/, "");                       // drop trailing slash(es)
+  return u.toLowerCase();
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -271,7 +287,7 @@ export function transformCanvas(
     visibility: meta.visibility,
     map: { format: "jsoncanvas/1.0", nodes, edges },
     "x-distill": { nodes: kinds },
-    provenance: meta.provenance,
+    provenance: meta.provenance.map((p) => ({ ...p, source_key: p.source_key ?? sourceKey(p.url) })),
     license: meta.license,
     distill_version: meta.distill_version,
   };
@@ -460,4 +476,17 @@ export function buildSidecar(artifact: DistillMapArtifact, signature?: ArtifactS
     );
   }
   return lines.join("\n");
+}
+
+/** Parse the signature block out of an exported map's sidecar frontmatter. */
+export function parseSidecarSignature(md: string): ArtifactSignature | null {
+  const field = (name: string): string | null => {
+    const m = md.match(new RegExp(`^${name}:[ \\t]*(.+)$`, "m"));
+    return m ? m[1].trim() : null;
+  };
+  const algo = field("signature_algo");
+  const public_key = field("public_key");
+  const signature = field("signature");
+  if (!algo || !public_key || !signature) return null;
+  return { algo, public_key, signature };
 }

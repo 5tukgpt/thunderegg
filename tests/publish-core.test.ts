@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   firstLine, inferKind, transformCanvas, validatePublishMeta, validateArtifact,
-  redactionScan, buildSidecar, NODE_TEXT_CAP, DEFAULT_BLOCKED_ZONES,
+  redactionScan, buildSidecar, sourceKey, parseSidecarSignature,
+  NODE_TEXT_CAP, DEFAULT_BLOCKED_ZONES,
   type Canvas, type PublishMeta, type DistillMapArtifact,
 } from "../publish-core";
 
@@ -215,5 +216,34 @@ describe("buildSidecar", () => {
     expect(signed).toContain("signature: SIG_B64");
     expect(signed).toContain("Verify the exact bytes");
     expect(buildSidecar(artifact)).not.toContain("signature:");
+  });
+});
+
+describe("sourceKey", () => {
+  it("normalizes scheme, www, query, fragment, trailing slash, and case", () => {
+    expect(sourceKey("https://www.FDA.gov/media/116573/")).toBe("fda.gov/media/116573");
+    expect(sourceKey("http://example.com/a/b?x=1#frag")).toBe("example.com/a/b");
+    expect(sourceKey("https://arxiv.org/abs/1234.5678")).toBe("arxiv.org/abs/1234.5678");
+  });
+  it("collapses two URLs for the same doc to one key (the overlap join)", () => {
+    expect(sourceKey("https://fda.gov/x/")).toBe(sourceKey("http://www.fda.gov/x?utm=1"));
+  });
+});
+
+describe("transformCanvas source_key", () => {
+  it("derives source_key for every provenance entry", () => {
+    const r = transformCanvas(canvas(), goodMeta(), "u");
+    expect(r.artifact.provenance[0].source_key).toBe("fda.gov/x");
+  });
+});
+
+describe("parseSidecarSignature", () => {
+  it("round-trips a signed sidecar", () => {
+    const a = transformCanvas(canvas(), goodMeta(), "u").artifact;
+    const sig = { algo: "ed25519", public_key: "PK", signature: "SG" };
+    expect(parseSidecarSignature(buildSidecar(a, sig))).toEqual(sig);
+  });
+  it("returns null for an unsigned sidecar", () => {
+    expect(parseSidecarSignature(buildSidecar(transformCanvas(canvas(), goodMeta(), "u").artifact))).toBeNull();
   });
 });

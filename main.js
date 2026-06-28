@@ -159,6 +159,14 @@ function firstLine(text) {
 function inferKind(text) {
   return firstLine(text).endsWith("?") ? "question" : "concept";
 }
+function sourceKey(url) {
+  let u = (url ?? "").trim();
+  u = u.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "");
+  u = u.replace(/^www\./i, "");
+  u = u.split(/[?#]/)[0];
+  u = u.replace(/\/+$/, "");
+  return u.toLowerCase();
+}
 function transformCanvas(canvas, meta, clientUuid) {
   const warnings = [];
   const blocking = [];
@@ -234,7 +242,7 @@ function transformCanvas(canvas, meta, clientUuid) {
     visibility: meta.visibility,
     map: { format: "jsoncanvas/1.0", nodes, edges },
     "x-distill": { nodes: kinds },
-    provenance: meta.provenance,
+    provenance: meta.provenance.map((p) => ({ ...p, source_key: p.source_key ?? sourceKey(p.url) })),
     license: meta.license,
     distill_version: meta.distill_version
   };
@@ -362,6 +370,18 @@ function buildSidecar(artifact, signature) {
   }
   return lines.join("\n");
 }
+function parseSidecarSignature(md) {
+  const field = (name) => {
+    const m = md.match(new RegExp(`^${name}:[ \\t]*(.+)$`, "m"));
+    return m ? m[1].trim() : null;
+  };
+  const algo = field("signature_algo");
+  const public_key = field("public_key");
+  const signature = field("signature");
+  if (!algo || !public_key || !signature)
+    return null;
+  return { algo, public_key, signature };
+}
 
 // publish-net.ts
 var import_obsidian = require("obsidian");
@@ -444,6 +464,18 @@ function publicKeySpki(pub) {
 }
 function signBytes(data, privateKey) {
   return (0, import_crypto.sign)(null, Buffer.from(data, "utf8"), privateKey).toString("base64");
+}
+function verifyBytes(data, signatureB64, publicKeySpkiB64) {
+  try {
+    const pub = (0, import_crypto.createPublicKey)({
+      key: Buffer.from(publicKeySpkiB64, "base64"),
+      format: "der",
+      type: "spki"
+    });
+    return (0, import_crypto.verify)(null, Buffer.from(data, "utf8"), pub, Buffer.from(signatureB64, "base64"));
+  } catch {
+    return false;
+  }
 }
 function keyFingerprint(publicKeySpkiB64) {
   return (0, import_crypto.createHash)("sha256").update(publicKeySpkiB64).digest("hex").slice(0, 16);
@@ -760,6 +792,10 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
           menu.addItem(
             (item) => item.setTitle("Publish concept map (Distill)").setIcon("upload").onClick(() => this.openPublishModal(file))
           );
+        } else if (file instanceof import_obsidian3.TFile && file.name.toLowerCase().endsWith(".distill.json")) {
+          menu.addItem(
+            (item) => item.setTitle("Verify signature (Distill)").setIcon("shield-check").onClick(() => this.verifyMapFile(file))
+          );
         } else if (file instanceof import_obsidian3.TFolder) {
           menu.addItem(
             (item) => item.setTitle("Distill: convert all attachments").setIcon("folder-down").onClick(() => this.convertFolder(file))
@@ -791,6 +827,17 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
         const ok = !!f && f.extension.toLowerCase() === "canvas";
         if (ok && !checking)
           this.openPublishModal(f);
+        return ok;
+      }
+    });
+    this.addCommand({
+      id: "distill-verify-map",
+      name: "Verify concept-map signature",
+      checkCallback: (checking) => {
+        const f = this.app.workspace.getActiveFile();
+        const ok = !!f && f.name.toLowerCase().endsWith(".distill.json");
+        if (ok && !checking)
+          this.verifyMapFile(f);
         return ok;
       }
     });
@@ -1022,6 +1069,31 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
       defaultLicense: this.settings.defaultLicense
     };
     new PublishModal(this.app, canvas, file.basename, ctx).open();
+  }
+  /** Verify the Ed25519 signature on an exported .distill.json against its sidecar. */
+  async verifyMapFile(file) {
+    try {
+      const json = await this.app.vault.read(file);
+      const base = file.name.replace(/\.distill\.json$/i, "");
+      const sidecarPath = (0, import_obsidian3.normalizePath)(file.path.replace(/[^/]+$/, `${base} \u2014 provenance.md`));
+      const sidecar = this.app.vault.getAbstractFileByPath(sidecarPath);
+      if (!(sidecar instanceof import_obsidian3.TFile)) {
+        new import_obsidian3.Notice("Distill: no provenance sidecar found next to this map \u2014 can't verify.");
+        return;
+      }
+      const sig = parseSidecarSignature(await this.app.vault.read(sidecar));
+      if (!sig) {
+        new import_obsidian3.Notice("Distill: sidecar has no signature block \u2014 this map is unsigned.");
+        return;
+      }
+      const ok = verifyBytes(json, sig.signature, sig.public_key);
+      new import_obsidian3.Notice(
+        ok ? `\u2705 Signature valid \u2014 authored by key ${keyFingerprint(sig.public_key)} (${sig.algo}).` : "\u274C Signature INVALID \u2014 the map may have been altered or re-signed.",
+        ok ? 8e3 : 1e4
+      );
+    } catch (e) {
+      new import_obsidian3.Notice(`Distill: verify failed \u2014 ${e?.message ?? e}`);
+    }
   }
   /* ═════════════════════════════════════════════════════════════════
      Refinery — Grades · Bonds · Condensers

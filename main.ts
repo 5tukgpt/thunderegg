@@ -16,7 +16,8 @@ import {
 import type { Canvas, Visibility, License } from "./publish-core";
 import { PublishModal, importForkedMap, type PublishContext } from "./publish-ui";
 import { readDeviceToken, writeDeviceToken, clearDeviceToken, hasDeviceToken } from "./publish-net";
-import { signingKeyFingerprint } from "./publish-sign";
+import { parseSidecarSignature } from "./publish-core";
+import { signingKeyFingerprint, verifyBytes, keyFingerprint } from "./publish-sign";
 
 const execAsync = promisify(exec);
 
@@ -110,6 +111,13 @@ export default class DistillBridgePlugin extends Plugin {
               .setIcon("upload")
               .onClick(() => this.openPublishModal(file)),
           );
+        } else if (file instanceof TFile && file.name.toLowerCase().endsWith(".distill.json")) {
+          menu.addItem((item) =>
+            item
+              .setTitle("Verify signature (Distill)")
+              .setIcon("shield-check")
+              .onClick(() => this.verifyMapFile(file)),
+          );
         } else if (file instanceof TFolder) {
           menu.addItem((item) =>
             item
@@ -146,6 +154,17 @@ export default class DistillBridgePlugin extends Plugin {
         const f = this.app.workspace.getActiveFile();
         const ok = !!f && f.extension.toLowerCase() === "canvas";
         if (ok && !checking) this.openPublishModal(f as TFile);
+        return ok;
+      },
+    });
+
+    this.addCommand({
+      id: "distill-verify-map",
+      name: "Verify concept-map signature",
+      checkCallback: (checking: boolean) => {
+        const f = this.app.workspace.getActiveFile();
+        const ok = !!f && f.name.toLowerCase().endsWith(".distill.json");
+        if (ok && !checking) this.verifyMapFile(f as TFile);
         return ok;
       },
     });
@@ -422,6 +441,34 @@ export default class DistillBridgePlugin extends Plugin {
       defaultLicense: this.settings.defaultLicense,
     };
     new PublishModal(this.app, canvas, file.basename, ctx).open();
+  }
+
+  /** Verify the Ed25519 signature on an exported .distill.json against its sidecar. */
+  async verifyMapFile(file: TFile): Promise<void> {
+    try {
+      const json = await this.app.vault.read(file);
+      const base = file.name.replace(/\.distill\.json$/i, "");
+      const sidecarPath = normalizePath(file.path.replace(/[^/]+$/, `${base} — provenance.md`));
+      const sidecar = this.app.vault.getAbstractFileByPath(sidecarPath);
+      if (!(sidecar instanceof TFile)) {
+        new Notice("Distill: no provenance sidecar found next to this map — can't verify.");
+        return;
+      }
+      const sig = parseSidecarSignature(await this.app.vault.read(sidecar));
+      if (!sig) {
+        new Notice("Distill: sidecar has no signature block — this map is unsigned.");
+        return;
+      }
+      const ok = verifyBytes(json, sig.signature, sig.public_key);
+      new Notice(
+        ok
+          ? `✅ Signature valid — authored by key ${keyFingerprint(sig.public_key)} (${sig.algo}).`
+          : "❌ Signature INVALID — the map may have been altered or re-signed.",
+        ok ? 8000 : 10000,
+      );
+    } catch (e: any) {
+      new Notice(`Distill: verify failed — ${e?.message ?? e}`);
+    }
   }
 
   /* ═════════════════════════════════════════════════════════════════
