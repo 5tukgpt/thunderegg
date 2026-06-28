@@ -400,3 +400,43 @@ export function redactionScan(
 
   return { blocks, warnings };
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Export sidecar (account-free sharing — no server, no network)
+   ═══════════════════════════════════════════════════════════════════ */
+
+/**
+ * Human-readable provenance/license companion for an exported map. The map
+ * itself travels as the `.distill.json` (distill.map/0.2); this sidecar makes
+ * the sources + license legible when the file is shared (e.g. in Discord).
+ * Pure — no Obsidian, no network. Sharing a map never requires an account.
+ */
+export function buildSidecar(artifact: DistillMapArtifact): string {
+  const topicsYaml = artifact.topics.map((t) => JSON.stringify(t)).join(", ");
+  const lines: string[] = [
+    "---",
+    `title: ${JSON.stringify(artifact.title)}`,
+    `schema: ${artifact.schema}`,
+    `license: ${artifact.license}`,
+    `visibility: ${artifact.visibility}`,
+    `topics: [${topicsYaml}]`,
+    "---",
+    "",
+    `# ${artifact.title}`,
+    "",
+    artifact.summary,
+    "",
+    `**License:** ${artifact.license}`,
+    "",
+    "## Sources",
+  ];
+  for (const p of artifact.provenance) {
+    const acc = p.accessed ? ` (accessed ${p.accessed})` : "";
+    lines.push(`- ${p.source_title} — ${p.url} · ${p.source_type} · ${p.license}${acc}`);
+  }
+  lines.push(
+    "",
+    "_Exported from Distill. The concept map is in the companion `.distill.json` (distill.map/0.2). Share both together._",
+  );
+  return lines.join("\n");
+}

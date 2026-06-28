@@ -6,7 +6,7 @@
 import { App, Modal, Notice, Setting, TFile, normalizePath } from "obsidian";
 import {
   Canvas, DistillMapArtifact, PublishMeta, ProvenanceEntry, NodeKind,
-  transformCanvas, redactionScan,
+  transformCanvas, redactionScan, buildSidecar,
   SOURCE_TYPES, LICENSES, VISIBILITIES, SUMMARY_MIN, SUMMARY_MAX,
   type Visibility, type License, type SourceType,
 } from "./publish-core";
@@ -38,6 +38,7 @@ export class PublishModal extends Modal {
   private previewEl!: HTMLElement;
   private issuesEl!: HTMLElement;
   private publishBtn!: HTMLButtonElement;
+  private exportBtn!: HTMLButtonElement;
 
   constructor(app: App, canvas: Canvas, defaultTitle: string, ctx: PublishContext) {
     super(app);
@@ -62,7 +63,9 @@ export class PublishModal extends Modal {
     contentEl.createEl("h2", { text: "Publish concept map" });
     contentEl.createEl("p", {
       cls: "setting-item-description",
-      text: "Only text nodes are published, as your own synthesis. The exact JSON that will leave your device is shown below — nothing else is sent.",
+      text:
+        "Only text nodes are included, as your own synthesis. The exact JSON is shown below — nothing else leaves your device. " +
+        "“Export to vault” writes a shareable file with no account; “Publish” sends it to the server (needs a device token).",
     });
 
     new Setting(contentEl)
@@ -132,6 +135,10 @@ export class PublishModal extends Modal {
       new Notice("Artifact JSON copied.");
     }));
     btns.addButton((b) => {
+      this.exportBtn = b.buttonEl;
+      b.setButtonText("Export to vault").onClick(() => this.doExport());
+    });
+    btns.addButton((b) => {
       this.publishBtn = b.buttonEl;
       b.setButtonText("Publish").setCta().onClick(() => this.doPublish());
     });
@@ -165,6 +172,12 @@ export class PublishModal extends Modal {
     const ready = blocks.length === 0 && this.ctx.token.length > 0;
     this.publishBtn.disabled = !ready;
     this.publishBtn.title = this.ctx.token ? (blocks.length ? "Resolve the blocking issues above." : "") : "Connect a device token in Settings → Distill first.";
+
+    // Export needs no account — only that there are no blocking issues.
+    this.exportBtn.disabled = blocks.length > 0;
+    this.exportBtn.title = blocks.length
+      ? "Resolve the blocking issues above."
+      : "Write a shareable map file into your vault — no account needed.";
   }
 
   private async doPublish(): Promise<void> {
@@ -178,6 +191,24 @@ export class PublishModal extends Modal {
     } catch (e: unknown) {
       notice.hide();
       new Notice(`❌ Publish failed: ${e instanceof Error ? e.message : String(e)}`, 8000);
+    }
+  }
+
+  /** Write a shareable map file (+ provenance sidecar) into the vault. No account, no network. */
+  private async doExport(): Promise<void> {
+    const { artifact } = transformCanvas(this.canvas, this.meta, this.clientUuid);
+    const folder = "Distill Exports";
+    if (!this.app.vault.getAbstractFileByPath(folder)) {
+      try { await this.app.vault.createFolder(folder); } catch { /* race / exists */ }
+    }
+    const base = safeName(artifact.title);
+    try {
+      await writeOrReplace(this.app, normalizePath(`${folder}/${base}.distill.json`), JSON.stringify(artifact, null, 2));
+      await writeOrReplace(this.app, normalizePath(`${folder}/${base} — provenance.md`), buildSidecar(artifact));
+      new Notice(`✅ Exported "${artifact.title}" to ${folder}/ — share the .distill.json (no account needed).`);
+      this.close();
+    } catch (e: unknown) {
+      new Notice(`❌ Export failed: ${e instanceof Error ? e.message : String(e)}`, 8000);
     }
   }
 

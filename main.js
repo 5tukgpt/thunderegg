@@ -319,6 +319,35 @@ function redactionScan(artifact, blockedZones = DEFAULT_BLOCKED_ZONES) {
   }
   return { blocks, warnings };
 }
+function buildSidecar(artifact) {
+  const topicsYaml = artifact.topics.map((t) => JSON.stringify(t)).join(", ");
+  const lines = [
+    "---",
+    `title: ${JSON.stringify(artifact.title)}`,
+    `schema: ${artifact.schema}`,
+    `license: ${artifact.license}`,
+    `visibility: ${artifact.visibility}`,
+    `topics: [${topicsYaml}]`,
+    "---",
+    "",
+    `# ${artifact.title}`,
+    "",
+    artifact.summary,
+    "",
+    `**License:** ${artifact.license}`,
+    "",
+    "## Sources"
+  ];
+  for (const p of artifact.provenance) {
+    const acc = p.accessed ? ` (accessed ${p.accessed})` : "";
+    lines.push(`- ${p.source_title} \u2014 ${p.url} \xB7 ${p.source_type} \xB7 ${p.license}${acc}`);
+  }
+  lines.push(
+    "",
+    "_Exported from Distill. The concept map is in the companion `.distill.json` (distill.map/0.2). Share both together._"
+  );
+  return lines.join("\n");
+}
 
 // publish-net.ts
 var import_obsidian = require("obsidian");
@@ -416,7 +445,7 @@ var PublishModal = class extends import_obsidian2.Modal {
     contentEl.createEl("h2", { text: "Publish concept map" });
     contentEl.createEl("p", {
       cls: "setting-item-description",
-      text: "Only text nodes are published, as your own synthesis. The exact JSON that will leave your device is shown below \u2014 nothing else is sent."
+      text: "Only text nodes are included, as your own synthesis. The exact JSON is shown below \u2014 nothing else leaves your device. \u201CExport to vault\u201D writes a shareable file with no account; \u201CPublish\u201D sends it to the server (needs a device token)."
     });
     new import_obsidian2.Setting(contentEl).setName("Title").addText((t) => t.setValue(this.meta.title).onChange((v) => {
       this.meta.title = v;
@@ -494,6 +523,10 @@ var PublishModal = class extends import_obsidian2.Modal {
       new import_obsidian2.Notice("Artifact JSON copied.");
     }));
     btns.addButton((b) => {
+      this.exportBtn = b.buttonEl;
+      b.setButtonText("Export to vault").onClick(() => this.doExport());
+    });
+    btns.addButton((b) => {
       this.publishBtn = b.buttonEl;
       b.setButtonText("Publish").setCta().onClick(() => this.doPublish());
     });
@@ -521,6 +554,8 @@ var PublishModal = class extends import_obsidian2.Modal {
     const ready = blocks.length === 0 && this.ctx.token.length > 0;
     this.publishBtn.disabled = !ready;
     this.publishBtn.title = this.ctx.token ? blocks.length ? "Resolve the blocking issues above." : "" : "Connect a device token in Settings \u2192 Distill first.";
+    this.exportBtn.disabled = blocks.length > 0;
+    this.exportBtn.title = blocks.length ? "Resolve the blocking issues above." : "Write a shareable map file into your vault \u2014 no account needed.";
   }
   async doPublish() {
     const { artifact } = transformCanvas(this.canvas, this.meta, this.clientUuid);
@@ -533,6 +568,26 @@ var PublishModal = class extends import_obsidian2.Modal {
     } catch (e) {
       notice.hide();
       new import_obsidian2.Notice(`\u274C Publish failed: ${e instanceof Error ? e.message : String(e)}`, 8e3);
+    }
+  }
+  /** Write a shareable map file (+ provenance sidecar) into the vault. No account, no network. */
+  async doExport() {
+    const { artifact } = transformCanvas(this.canvas, this.meta, this.clientUuid);
+    const folder = "Distill Exports";
+    if (!this.app.vault.getAbstractFileByPath(folder)) {
+      try {
+        await this.app.vault.createFolder(folder);
+      } catch {
+      }
+    }
+    const base = safeName(artifact.title);
+    try {
+      await writeOrReplace(this.app, (0, import_obsidian2.normalizePath)(`${folder}/${base}.distill.json`), JSON.stringify(artifact, null, 2));
+      await writeOrReplace(this.app, (0, import_obsidian2.normalizePath)(`${folder}/${base} \u2014 provenance.md`), buildSidecar(artifact));
+      new import_obsidian2.Notice(`\u2705 Exported "${artifact.title}" to ${folder}/ \u2014 share the .distill.json (no account needed).`);
+      this.close();
+    } catch (e) {
+      new import_obsidian2.Notice(`\u274C Export failed: ${e instanceof Error ? e.message : String(e)}`, 8e3);
     }
   }
   onClose() {

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   firstLine, inferKind, transformCanvas, validatePublishMeta, validateArtifact,
-  redactionScan, NODE_TEXT_CAP, DEFAULT_BLOCKED_ZONES,
+  redactionScan, buildSidecar, NODE_TEXT_CAP, DEFAULT_BLOCKED_ZONES,
   type Canvas, type PublishMeta, type DistillMapArtifact,
 } from "../publish-core";
 
@@ -180,5 +180,31 @@ describe("redactionScan", () => {
     const r = redactionScan(artifact({ topics: ["secret-project"] }), ["#secret-project"]);
     expect(r.blocks.length).toBeGreaterThan(0);
     expect(DEFAULT_BLOCKED_ZONES).toContain("#health");
+  });
+});
+
+describe("buildSidecar", () => {
+  const artifact = transformCanvas(canvas(), goodMeta(), "u").artifact;
+
+  it("includes title, license, topics, summary, and every source", () => {
+    const s = buildSidecar(artifact);
+    expect(s).toContain("# Design Controls");
+    expect(s).toContain("**License:** user-generated");
+    expect(s).toContain('topics: ["medtech"]');
+    expect(s).toContain(goodMeta().summary);
+    expect(s).toContain("FDA Design Controls Guidance — https://www.fda.gov/x");
+    expect(s).toMatch(/distill\.map\/0\.2/);
+  });
+
+  it("lists all provenance entries", () => {
+    const multi = transformCanvas(canvas(), goodMeta({
+      provenance: [
+        { source_title: "A", url: "https://a", source_type: "paper", license: "CC-BY-4.0", accessed: "2026-01-01" },
+        { source_title: "B", url: "https://b", source_type: "book", license: "public-domain" },
+      ],
+    }), "u").artifact;
+    const s = buildSidecar(multi);
+    expect(s).toContain("A — https://a · paper · CC-BY-4.0 (accessed 2026-01-01)");
+    expect(s).toContain("B — https://b · book · public-domain");
   });
 });
