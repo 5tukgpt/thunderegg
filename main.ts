@@ -13,6 +13,11 @@ import {
   BondGraph, emptyBondGraph, buildBondGraph,
   bondCount, isCondenser, referencingCondensers,
 } from "./core";
+import type { Canvas, Visibility, License } from "./publish-core";
+import { PublishModal, importForkedMap, type PublishContext } from "./publish-ui";
+import { readDeviceToken, writeDeviceToken, clearDeviceToken, hasDeviceToken } from "./publish-net";
+import { parseSidecarSignature } from "./publish-core";
+import { signingKeyFingerprint, verifyBytes, keyFingerprint } from "./publish-sign";
 
 const execAsync = promisify(exec);
 
@@ -37,6 +42,11 @@ interface DistillBridgeSettings {
   showGradeBadges: boolean;
   showBondCounts: boolean;
   showCondenserLinks: boolean;
+  /* Publish & Community */
+  serverBaseUrl: string;
+  blockedZonesCsv: string;
+  defaultVisibility: Visibility;
+  defaultLicense: License;
 }
 
 const DEFAULT_SETTINGS: DistillBridgeSettings = {
@@ -49,6 +59,10 @@ const DEFAULT_SETTINGS: DistillBridgeSettings = {
   showGradeBadges: true,
   showBondCounts: true,
   showCondenserLinks: true,
+  serverBaseUrl: "https://distillmd.dev",
+  blockedZonesCsv: "#health, #work, #client, #private",
+  defaultVisibility: "private",
+  defaultLicense: "user-generated",
 };
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -90,6 +104,20 @@ export default class DistillBridgePlugin extends Plugin {
               .setIcon("file-down")
               .onClick(() => this.convertFile(file)),
           );
+        } else if (file instanceof TFile && file.extension.toLowerCase() === "canvas") {
+          menu.addItem((item) =>
+            item
+              .setTitle("Publish concept map (Distill)")
+              .setIcon("upload")
+              .onClick(() => this.openPublishModal(file)),
+          );
+        } else if (file instanceof TFile && file.name.toLowerCase().endsWith(".distill.json")) {
+          menu.addItem((item) =>
+            item
+              .setTitle("Verify signature (Distill)")
+              .setIcon("shield-check")
+              .onClick(() => this.verifyMapFile(file)),
+          );
         } else if (file instanceof TFolder) {
           menu.addItem((item) =>
             item
@@ -117,6 +145,38 @@ export default class DistillBridgePlugin extends Plugin {
       id: "distill-convert-clipboard",
       name: "Convert clipboard",
       callback: () => this.convertClipboard(),
+    });
+
+    this.addCommand({
+      id: "distill-publish-canvas",
+      name: "Publish concept map",
+      checkCallback: (checking: boolean) => {
+        const f = this.app.workspace.getActiveFile();
+        const ok = !!f && f.extension.toLowerCase() === "canvas";
+        if (ok && !checking) this.openPublishModal(f as TFile);
+        return ok;
+      },
+    });
+
+    this.addCommand({
+      id: "distill-verify-map",
+      name: "Verify concept-map signature",
+      checkCallback: (checking: boolean) => {
+        const f = this.app.workspace.getActiveFile();
+        const ok = !!f && f.name.toLowerCase().endsWith(".distill.json");
+        if (ok && !checking) this.verifyMapFile(f as TFile);
+        return ok;
+      },
+    });
+
+    /* ── Fork deep-link: obsidian://distill-fork?map=<id> ── */
+    this.registerObsidianProtocolHandler("distill-fork", (params) => {
+      const mapId = (params as Record<string, string>).map;
+      if (!mapId) {
+        new Notice("Distill: fork link is missing ?map=…");
+        return;
+      }
+      importForkedMap(this.app, this.settings.serverBaseUrl, mapId);
     });
 
     /* ── Refinery bootstrap ── */
@@ -355,6 +415,59 @@ export default class DistillBridgePlugin extends Plugin {
       } catch { /* swallow */ }
       new Notice(`❌ Clipboard conversion failed: ${e?.message ?? e}`, 8000);
       console.error("[Distill]", e);
+    }
+  }
+
+  /* ═════════════════════════════════════════════════════════════════
+     Publish concept map (Canvas → distill.map/0.2)
+     ═════════════════════════════════════════════════════════════════ */
+
+  /** Open the Publish modal for a .canvas file. */
+  async openPublishModal(file: TFile): Promise<void> {
+    let canvas: Canvas;
+    try {
+      canvas = JSON.parse(await this.app.vault.read(file)) as Canvas;
+    } catch (e: any) {
+      new Notice(`Distill: could not read canvas — ${e?.message ?? e}`);
+      return;
+    }
+    const ctx: PublishContext = {
+      baseUrl: this.settings.serverBaseUrl,
+      token: readDeviceToken(),
+      blockedZones: this.settings.blockedZonesCsv
+        .split(",").map((s) => s.trim()).filter(Boolean),
+      distillVersion: this.manifest.version,
+      defaultVisibility: this.settings.defaultVisibility,
+      defaultLicense: this.settings.defaultLicense,
+    };
+    new PublishModal(this.app, canvas, file.basename, ctx).open();
+  }
+
+  /** Verify the Ed25519 signature on an exported .distill.json against its sidecar. */
+  async verifyMapFile(file: TFile): Promise<void> {
+    try {
+      const json = await this.app.vault.read(file);
+      const base = file.name.replace(/\.distill\.json$/i, "");
+      const sidecarPath = normalizePath(file.path.replace(/[^/]+$/, `${base} — provenance.md`));
+      const sidecar = this.app.vault.getAbstractFileByPath(sidecarPath);
+      if (!(sidecar instanceof TFile)) {
+        new Notice("Distill: no provenance sidecar found next to this map — can't verify.");
+        return;
+      }
+      const sig = parseSidecarSignature(await this.app.vault.read(sidecar));
+      if (!sig) {
+        new Notice("Distill: sidecar has no signature block — this map is unsigned.");
+        return;
+      }
+      const ok = verifyBytes(json, sig.signature, sig.public_key);
+      new Notice(
+        ok
+          ? `✅ Signature valid — authored by key ${keyFingerprint(sig.public_key)} (${sig.algo}).`
+          : "❌ Signature INVALID — the map may have been altered or re-signed.",
+        ok ? 8000 : 10000,
+      );
+    } catch (e: any) {
+      new Notice(`Distill: verify failed — ${e?.message ?? e}`);
     }
   }
 
@@ -736,6 +849,88 @@ class DistillBridgeSettingTab extends PluginSettingTab {
       .addToggle((t) =>
         t.setValue(this.plugin.settings.showCondenserLinks).onChange(async (v) => {
           this.plugin.settings.showCondenserLinks = v;
+          await this.plugin.saveSettings();
+        }),
+      );
+
+    /* ────────────────────────────────────────────────────────────── */
+    /*  PUBLISH & COMMUNITY                                          */
+    /* ────────────────────────────────────────────────────────────── */
+    containerEl.createEl("h3", { text: "Publish & Community" });
+    containerEl.createEl("p", {
+      cls: "setting-item-description",
+      text:
+        "Publish a Canvas as a concept map to distillmd.dev. Nothing is sent unless " +
+        "you explicitly publish; your vault never leaves your machine.",
+    });
+
+    new Setting(containerEl)
+      .setName("Server URL")
+      .setDesc("Where maps are published.")
+      .addText((t) =>
+        t.setValue(this.plugin.settings.serverBaseUrl).onChange(async (v) => {
+          this.plugin.settings.serverBaseUrl = v.trim() || "https://distillmd.dev";
+          await this.plugin.saveSettings();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName("Device token")
+      .setDesc(
+        hasDeviceToken()
+          ? "A device token is connected (stored outside your vault). Paste a new one to replace it."
+          : "Paste a publish-only device token from distillmd.dev/settings. Stored outside your vault — never in plugin data.",
+      )
+      .addText((t) => {
+        t.inputEl.type = "password";
+        t.setPlaceholder(hasDeviceToken() ? "•••• connected ••••" : "paste token").onChange((v) => {
+          const tok = v.trim();
+          if (tok) writeDeviceToken(tok);
+        });
+      })
+      .addExtraButton((b) =>
+        b.setIcon("trash").setTooltip("Disconnect (delete local token)").onClick(() => {
+          clearDeviceToken();
+          new Notice("Distill: device token removed.");
+          this.display();
+        }),
+      );
+
+    const fp = signingKeyFingerprint();
+    new Setting(containerEl)
+      .setName("Signing key")
+      .setDesc(
+        fp
+          ? `Maps are signed with device key ${fp} (Ed25519). The public key travels in each exported map's sidecar so others can verify you authored it.`
+          : "An Ed25519 signing key is created on your first export, stored outside your vault. Its public key travels with each map so others can verify authorship.",
+      );
+
+    new Setting(containerEl)
+      .setName("Default visibility")
+      .setDesc("Pre-selected visibility for new publishes.")
+      .addDropdown((d) => {
+        (["private", "followers", "public"] as const).forEach((v) => d.addOption(v, v));
+        d.setValue(this.plugin.settings.defaultVisibility).onChange(async (v) => {
+          this.plugin.settings.defaultVisibility = v as Visibility;
+          await this.plugin.saveSettings();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Default map license")
+      .addText((t) =>
+        t.setValue(this.plugin.settings.defaultLicense).onChange(async (v) => {
+          this.plugin.settings.defaultLicense = (v.trim() || "user-generated") as License;
+          await this.plugin.saveSettings();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName("Blocked privacy zones")
+      .setDesc("Comma-separated tags that block publishing (checked on-device).")
+      .addText((t) =>
+        t.setValue(this.plugin.settings.blockedZonesCsv).onChange(async (v) => {
+          this.plugin.settings.blockedZonesCsv = v;
           await this.plugin.saveSettings();
         }),
       );
