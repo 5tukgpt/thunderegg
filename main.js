@@ -36,9 +36,9 @@ module.exports = __toCommonJS(main_exports);
 var import_obsidian3 = require("obsidian");
 var import_child_process = require("child_process");
 var import_util = require("util");
-var os2 = __toESM(require("os"));
-var path2 = __toESM(require("path"));
-var fs2 = __toESM(require("fs"));
+var os3 = __toESM(require("os"));
+var path3 = __toESM(require("path"));
+var fs3 = __toESM(require("fs"));
 
 // core.ts
 var CONVERTIBLE = /* @__PURE__ */ new Set([
@@ -319,7 +319,7 @@ function redactionScan(artifact, blockedZones = DEFAULT_BLOCKED_ZONES) {
   }
   return { blocks, warnings };
 }
-function buildSidecar(artifact) {
+function buildSidecar(artifact, signature) {
   const topicsYaml = artifact.topics.map((t) => JSON.stringify(t)).join(", ");
   const lines = [
     "---",
@@ -327,7 +327,16 @@ function buildSidecar(artifact) {
     `schema: ${artifact.schema}`,
     `license: ${artifact.license}`,
     `visibility: ${artifact.visibility}`,
-    `topics: [${topicsYaml}]`,
+    `topics: [${topicsYaml}]`
+  ];
+  if (signature) {
+    lines.push(
+      `signature_algo: ${signature.algo}`,
+      `public_key: ${signature.public_key}`,
+      `signature: ${signature.signature}`
+    );
+  }
+  lines.push(
     "---",
     "",
     `# ${artifact.title}`,
@@ -337,7 +346,7 @@ function buildSidecar(artifact) {
     `**License:** ${artifact.license}`,
     "",
     "## Sources"
-  ];
+  );
   for (const p of artifact.provenance) {
     const acc = p.accessed ? ` (accessed ${p.accessed})` : "";
     lines.push(`- ${p.source_title} \u2014 ${p.url} \xB7 ${p.source_type} \xB7 ${p.license}${acc}`);
@@ -346,6 +355,11 @@ function buildSidecar(artifact) {
     "",
     "_Exported from Distill. The concept map is in the companion `.distill.json` (distill.map/0.2). Share both together._"
   );
+  if (signature) {
+    lines.push(
+      `_Signed (${signature.algo}). Verify the exact bytes of the \`.distill.json\` against \`public_key\` above._`
+    );
+  }
   return lines.join("\n");
 }
 
@@ -416,6 +430,55 @@ async function fetchForkFile(baseUrl, mapId) {
     throw new Error(`Fork fetch failed: HTTP ${res.status}`);
   }
   return res.json;
+}
+
+// publish-sign.ts
+var import_crypto = require("crypto");
+var os2 = __toESM(require("os"));
+var path2 = __toESM(require("path"));
+var fs2 = __toESM(require("fs"));
+var KEY_DIR = path2.join(os2.homedir(), "Library", "Application Support", "MarkItDownDroplet");
+var KEY_FILE = path2.join(KEY_DIR, "distill-signing-key.pem");
+function publicKeySpki(pub) {
+  return pub.export({ type: "spki", format: "der" }).toString("base64");
+}
+function signBytes(data, privateKey) {
+  return (0, import_crypto.sign)(null, Buffer.from(data, "utf8"), privateKey).toString("base64");
+}
+function keyFingerprint(publicKeySpkiB64) {
+  return (0, import_crypto.createHash)("sha256").update(publicKeySpkiB64).digest("hex").slice(0, 16);
+}
+function getOrCreateSigningKey() {
+  try {
+    return (0, import_crypto.createPrivateKey)(fs2.readFileSync(KEY_FILE, "utf8"));
+  } catch {
+    const { privateKey } = (0, import_crypto.generateKeyPairSync)("ed25519");
+    const pem = privateKey.export({ type: "pkcs8", format: "pem" });
+    fs2.mkdirSync(KEY_DIR, { recursive: true });
+    fs2.writeFileSync(KEY_FILE, pem, { mode: 384 });
+    try {
+      fs2.chmodSync(KEY_FILE, 384);
+    } catch {
+    }
+    return privateKey;
+  }
+}
+function signArtifact(jsonString) {
+  const priv = getOrCreateSigningKey();
+  const pub = (0, import_crypto.createPublicKey)(priv);
+  return {
+    algo: "ed25519",
+    public_key: publicKeySpki(pub),
+    signature: signBytes(jsonString, priv)
+  };
+}
+function signingKeyFingerprint() {
+  try {
+    const priv = (0, import_crypto.createPrivateKey)(fs2.readFileSync(KEY_FILE, "utf8"));
+    return keyFingerprint(publicKeySpki((0, import_crypto.createPublicKey)(priv)));
+  } catch {
+    return null;
+  }
 }
 
 // publish-ui.ts
@@ -581,10 +644,17 @@ var PublishModal = class extends import_obsidian2.Modal {
       }
     }
     const base = safeName(artifact.title);
+    const json = JSON.stringify(artifact, null, 2);
+    let signature;
     try {
-      await writeOrReplace(this.app, (0, import_obsidian2.normalizePath)(`${folder}/${base}.distill.json`), JSON.stringify(artifact, null, 2));
-      await writeOrReplace(this.app, (0, import_obsidian2.normalizePath)(`${folder}/${base} \u2014 provenance.md`), buildSidecar(artifact));
-      new import_obsidian2.Notice(`\u2705 Exported "${artifact.title}" to ${folder}/ \u2014 share the .distill.json (no account needed).`);
+      signature = signArtifact(json);
+    } catch (e) {
+      console.error("[Distill] signing failed; exporting unsigned", e);
+    }
+    try {
+      await writeOrReplace(this.app, (0, import_obsidian2.normalizePath)(`${folder}/${base}.distill.json`), json);
+      await writeOrReplace(this.app, (0, import_obsidian2.normalizePath)(`${folder}/${base} \u2014 provenance.md`), buildSidecar(artifact, signature));
+      new import_obsidian2.Notice(`\u2705 Exported "${artifact.title}"${signature ? " (signed)" : ""} to ${folder}/ \u2014 share the .distill.json (no account needed).`);
       this.close();
     } catch (e) {
       new import_obsidian2.Notice(`\u274C Export failed: ${e instanceof Error ? e.message : String(e)}`, 8e3);
@@ -638,19 +708,19 @@ The map is in \`${title}.canvas\` in this folder.
     new import_obsidian2.Notice(`\u274C Fork failed: ${e instanceof Error ? e.message : String(e)}`, 8e3);
   }
 }
-async function writeOrReplace(app, path3, content) {
-  const existing = app.vault.getAbstractFileByPath(path3);
+async function writeOrReplace(app, path4, content) {
+  const existing = app.vault.getAbstractFileByPath(path4);
   if (existing instanceof import_obsidian2.TFile) {
     await app.vault.modify(existing, content);
   } else {
-    await app.vault.create(path3, content);
+    await app.vault.create(path4, content);
   }
 }
 
 // main.ts
 var execAsync = (0, import_util.promisify)(import_child_process.exec);
 var DEFAULT_SETTINGS = {
-  enginePath: `${os2.homedir()}/Library/Application Support/MarkItDownDroplet/convert.sh`,
+  enginePath: `${os3.homedir()}/Library/Application Support/MarkItDownDroplet/convert.sh`,
   frontmatter: true,
   openAfter: true,
   refineryEnabled: false,
@@ -764,7 +834,7 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
      ═════════════════════════════════════════════════════════════════ */
   async checkDistillAvailable() {
     try {
-      await fs2.promises.access(this.settings.enginePath, fs2.constants.X_OK);
+      await fs3.promises.access(this.settings.enginePath, fs3.constants.X_OK);
       this.distillAvailable = true;
     } catch {
       this.distillAvailable = false;
@@ -790,7 +860,7 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
   /** Resolve a vault-relative TFile to an absolute filesystem path. */
   absPath(file) {
     const base = this.app.vault.adapter.getBasePath?.() ?? "";
-    return path2.join(base, file.path);
+    return path3.join(base, file.path);
   }
   /** Shell-escape a single argument (see core.ts). */
   shellQuote(s) {
@@ -1244,6 +1314,10 @@ var DistillBridgeSettingTab = class extends import_obsidian3.PluginSettingTab {
         new import_obsidian3.Notice("Distill: device token removed.");
         this.display();
       })
+    );
+    const fp = signingKeyFingerprint();
+    new import_obsidian3.Setting(containerEl).setName("Signing key").setDesc(
+      fp ? `Maps are signed with device key ${fp} (Ed25519). The public key travels in each exported map's sidecar so others can verify you authored it.` : "An Ed25519 signing key is created on your first export, stored outside your vault. Its public key travels with each map so others can verify authorship."
     );
     new import_obsidian3.Setting(containerEl).setName("Default visibility").setDesc("Pre-selected visibility for new publishes.").addDropdown((d) => {
       ["private", "followers", "public"].forEach((v) => d.addOption(v, v));

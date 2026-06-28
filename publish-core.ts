@@ -411,7 +411,14 @@ export function redactionScan(
  * the sources + license legible when the file is shared (e.g. in Discord).
  * Pure — no Obsidian, no network. Sharing a map never requires an account.
  */
-export function buildSidecar(artifact: DistillMapArtifact): string {
+/** Detached authorship signature over the exported `.distill.json` bytes (see publish-sign.ts). */
+export interface ArtifactSignature {
+  algo: string;
+  public_key: string;
+  signature: string;
+}
+
+export function buildSidecar(artifact: DistillMapArtifact, signature?: ArtifactSignature): string {
   const topicsYaml = artifact.topics.map((t) => JSON.stringify(t)).join(", ");
   const lines: string[] = [
     "---",
@@ -420,6 +427,15 @@ export function buildSidecar(artifact: DistillMapArtifact): string {
     `license: ${artifact.license}`,
     `visibility: ${artifact.visibility}`,
     `topics: [${topicsYaml}]`,
+  ];
+  if (signature) {
+    lines.push(
+      `signature_algo: ${signature.algo}`,
+      `public_key: ${signature.public_key}`,
+      `signature: ${signature.signature}`,
+    );
+  }
+  lines.push(
     "---",
     "",
     `# ${artifact.title}`,
@@ -429,7 +445,7 @@ export function buildSidecar(artifact: DistillMapArtifact): string {
     `**License:** ${artifact.license}`,
     "",
     "## Sources",
-  ];
+  );
   for (const p of artifact.provenance) {
     const acc = p.accessed ? ` (accessed ${p.accessed})` : "";
     lines.push(`- ${p.source_title} — ${p.url} · ${p.source_type} · ${p.license}${acc}`);
@@ -438,5 +454,10 @@ export function buildSidecar(artifact: DistillMapArtifact): string {
     "",
     "_Exported from Distill. The concept map is in the companion `.distill.json` (distill.map/0.2). Share both together._",
   );
+  if (signature) {
+    lines.push(
+      `_Signed (${signature.algo}). Verify the exact bytes of the \`.distill.json\` against \`public_key\` above._`,
+    );
+  }
   return lines.join("\n");
 }

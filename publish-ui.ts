@@ -11,6 +11,7 @@ import {
   type Visibility, type License, type SourceType,
 } from "./publish-core";
 import { publishArtifact, fetchForkFile } from "./publish-net";
+import { signArtifact, type Signature } from "./publish-sign";
 
 export interface PublishContext {
   baseUrl: string;
@@ -202,10 +203,21 @@ export class PublishModal extends Modal {
       try { await this.app.vault.createFolder(folder); } catch { /* race / exists */ }
     }
     const base = safeName(artifact.title);
+    const json = JSON.stringify(artifact, null, 2);
+
+    // Sign the exact bytes we write (Ed25519). Best-effort: export unsigned if the
+    // device key can't be created, rather than blocking the share.
+    let signature: Signature | undefined;
     try {
-      await writeOrReplace(this.app, normalizePath(`${folder}/${base}.distill.json`), JSON.stringify(artifact, null, 2));
-      await writeOrReplace(this.app, normalizePath(`${folder}/${base} — provenance.md`), buildSidecar(artifact));
-      new Notice(`✅ Exported "${artifact.title}" to ${folder}/ — share the .distill.json (no account needed).`);
+      signature = signArtifact(json);
+    } catch (e) {
+      console.error("[Distill] signing failed; exporting unsigned", e);
+    }
+
+    try {
+      await writeOrReplace(this.app, normalizePath(`${folder}/${base}.distill.json`), json);
+      await writeOrReplace(this.app, normalizePath(`${folder}/${base} — provenance.md`), buildSidecar(artifact, signature));
+      new Notice(`✅ Exported "${artifact.title}"${signature ? " (signed)" : ""} to ${folder}/ — share the .distill.json (no account needed).`);
       this.close();
     } catch (e: unknown) {
       new Notice(`❌ Export failed: ${e instanceof Error ? e.message : String(e)}`, 8000);

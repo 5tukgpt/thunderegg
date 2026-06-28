@@ -207,4 +207,13 @@ describe("buildSidecar", () => {
     expect(s).toContain("A — https://a · paper · CC-BY-4.0 (accessed 2026-01-01)");
     expect(s).toContain("B — https://b · book · public-domain");
   });
+
+  it("embeds the signature block when provided, omits it when absent", () => {
+    const signed = buildSidecar(artifact, { algo: "ed25519", public_key: "PUBKEY_B64", signature: "SIG_B64" });
+    expect(signed).toContain("signature_algo: ed25519");
+    expect(signed).toContain("public_key: PUBKEY_B64");
+    expect(signed).toContain("signature: SIG_B64");
+    expect(signed).toContain("Verify the exact bytes");
+    expect(buildSidecar(artifact)).not.toContain("signature:");
+  });
 });

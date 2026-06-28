@@ -16,6 +16,7 @@ import {
 import type { Canvas, Visibility, License } from "./publish-core";
 import { PublishModal, importForkedMap, type PublishContext } from "./publish-ui";
 import { readDeviceToken, writeDeviceToken, clearDeviceToken, hasDeviceToken } from "./publish-net";
+import { signingKeyFingerprint } from "./publish-sign";
 
 const execAsync = promisify(exec);
 
@@ -846,6 +847,15 @@ class DistillBridgeSettingTab extends PluginSettingTab {
           new Notice("Distill: device token removed.");
           this.display();
         }),
+      );
+
+    const fp = signingKeyFingerprint();
+    new Setting(containerEl)
+      .setName("Signing key")
+      .setDesc(
+        fp
+          ? `Maps are signed with device key ${fp} (Ed25519). The public key travels in each exported map's sidecar so others can verify you authored it.`
+          : "An Ed25519 signing key is created on your first export, stored outside your vault. Its public key travels with each map so others can verify authorship.",
       );
 
     new Setting(containerEl)
