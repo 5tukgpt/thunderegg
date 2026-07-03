@@ -220,20 +220,67 @@ describe("buildSidecar", () => {
 });
 
 describe("sourceKey", () => {
-  it("normalizes scheme, www, query, fragment, trailing slash, and case", () => {
-    expect(sourceKey("https://www.FDA.gov/media/116573/")).toBe("fda.gov/media/116573");
-    expect(sourceKey("http://example.com/a/b?x=1#frag")).toBe("example.com/a/b");
-    expect(sourceKey("https://arxiv.org/abs/1234.5678")).toBe("arxiv.org/abs/1234.5678");
+  it("normalizes scheme, www, query, fragment, trailing slash, and case (web: fallback)", () => {
+    expect(sourceKey("https://www.FDA.gov/media/116573/")).toBe("web:fda.gov/media/116573");
+    expect(sourceKey("http://example.com/a/b?x=1#frag")).toBe("web:example.com/a/b");
   });
   it("collapses two URLs for the same doc to one key (the overlap join)", () => {
     expect(sourceKey("https://fda.gov/x/")).toBe(sourceKey("http://www.fda.gov/x?utm=1"));
+  });
+
+  it("doi: resolves doi.org, dx.doi.org, and DOIs in publisher paths to one key", () => {
+    expect(sourceKey("https://doi.org/10.1038/s41586-021-03819-2")).toBe("doi:10.1038/s41586-021-03819-2");
+    expect(sourceKey("http://dx.doi.org/10.1038/s41586-021-03819-2")).toBe("doi:10.1038/s41586-021-03819-2");
+    expect(sourceKey("https://link.springer.com/article/10.1038/s41586-021-03819-2"))
+      .toBe(sourceKey("https://doi.org/10.1038/s41586-021-03819-2"));
+  });
+  it("doi: lowercases and strips trailing punctuation", () => {
+    expect(sourceKey("https://doi.org/10.1234/ABC.Def")).toBe("doi:10.1234/abc.def");
+    expect(sourceKey("https://doi.org/10.1234/abc).")).toBe("doi:10.1234/abc");
+    expect(sourceKey("https://doi.org/10.1234/abc/")).toBe("doi:10.1234/abc");
+  });
+
+  it("pmid: extracts the PubMed id, ignoring trailing slash and query", () => {
+    expect(sourceKey("https://pubmed.ncbi.nlm.nih.gov/31452104/")).toBe("pmid:31452104");
+    expect(sourceKey("https://pubmed.ncbi.nlm.nih.gov/31452104?format=abstract")).toBe("pmid:31452104");
+  });
+
+  it("arxiv: unifies abs/pdf shapes and strips .pdf + version suffix", () => {
+    expect(sourceKey("https://arxiv.org/abs/1234.5678")).toBe("arxiv:1234.5678");
+    expect(sourceKey("https://arxiv.org/abs/2103.14030v2")).toBe("arxiv:2103.14030");
+    expect(sourceKey("https://www.arxiv.org/pdf/2103.14030v1.pdf")).toBe("arxiv:2103.14030");
+    expect(sourceKey("https://arxiv.org/abs/math/0211159")).toBe("arxiv:math/0211159");
+  });
+
+  it("yt: preserves the case-sensitive video id the old key destroyed", () => {
+    expect(sourceKey("https://www.youtube.com/watch?v=dQw4w9WgXcQ")).toBe("yt:dQw4w9WgXcQ");
+    expect(sourceKey("https://youtube.com/watch?v=dQw4w9WgXcQ&list=PL1&t=42")).toBe("yt:dQw4w9WgXcQ");
+    expect(sourceKey("https://youtu.be/dQw4w9WgXcQ?t=42")).toBe("yt:dQw4w9WgXcQ");
+    expect(sourceKey("https://youtube.com/shorts/AbC123_-xyz")).toBe("yt:AbC123_-xyz");
+    expect(sourceKey("https://www.youtube.com/live/AbC123_-xyz")).toBe("yt:AbC123_-xyz");
+    expect(sourceKey("https://m.youtube.com/watch?v=dQw4w9WgXcQ")).toBe("yt:dQw4w9WgXcQ");
+  });
+  it("yt: two videos differing only in id case get distinct keys", () => {
+    expect(sourceKey("https://youtu.be/abcDEF")).not.toBe(sourceKey("https://youtu.be/ABCdef"));
+  });
+
+  it("web: keeps identity-bearing query params (allowlist) in sorted order", () => {
+    expect(sourceKey("https://example.com/story?id=42&utm_source=x")).toBe("web:example.com/story?id=42");
+    expect(sourceKey("https://example.com/f?p=2&ID=9&article=abc")).toBe("web:example.com/f?article=abc&id=9&p=2");
+    expect(sourceKey("https://forum.example.com/viewtopic.php?t=1")).toBe("web:forum.example.com/viewtopic.php");
+  });
+
+  it("tolerates empty and garbage input", () => {
+    expect(sourceKey("")).toBe("web:");
+    expect(sourceKey("   ")).toBe("web:");
+    expect(sourceKey("not a url")).toBe("web:not a url");
   });
 });
 
 describe("transformCanvas source_key", () => {
   it("derives source_key for every provenance entry", () => {
     const r = transformCanvas(canvas(), goodMeta(), "u");
-    expect(r.artifact.provenance[0].source_key).toBe("fda.gov/x");
+    expect(r.artifact.provenance[0].source_key).toBe("web:fda.gov/x");
   });
 });
 

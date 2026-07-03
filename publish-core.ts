@@ -182,19 +182,86 @@ export function inferKind(text: string): NodeKind {
   return firstLine(text).endsWith("?") ? "question" : "concept";
 }
 
+/** DOI pattern (Crossref-recommended shape): 10.<4–9 digits>/<suffix>. */
+const RE_DOI = /10\.\d{4,9}\/\S+/;
+
+/** Fallback-rung query params that carry document identity (kept, sorted). */
+const WEB_KEY_PARAMS = ["article", "id", "p"] as const;
+
+/** Parse a query string into first-occurrence key/value pairs (no decoding). */
+function queryParams(query: string): Map<string, string> {
+  const params = new Map<string, string>();
+  for (const pair of query.split("&")) {
+    if (!pair) continue;
+    const eq = pair.indexOf("=");
+    const k = eq === -1 ? pair : pair.slice(0, eq);
+    const v = eq === -1 ? "" : pair.slice(eq + 1);
+    if (!params.has(k)) params.set(k, v);
+  }
+  return params;
+}
+
 /**
- * Normalize a source URL into a stable overlap key (host + path; scheme, leading
- * www., query, fragment, and trailing slash dropped; lowercased). This is THE
- * key the overlap corpus joins on — "who distilled which source" — so it is
- * derived on-device and carried in every exported map, no server required.
+ * Normalize a source URL into a stable overlap key: `namespace:identifier`.
+ * A registry-aware ladder — `doi:` / `pmid:` / `arxiv:` / `yt:` — gives the
+ * same document ONE key across hosts and URL shapes; everything else falls
+ * back to `web:` host+path (scheme, leading www., fragment, and trailing
+ * slash dropped; lowercased) plus identity-bearing query params
+ * (WEB_KEY_PARAMS, appended in sorted order). This is THE key the overlap
+ * corpus joins on — "who distilled which source" — so it is derived
+ * on-device and carried in every exported map, no server required.
  */
 export function sourceKey(url: string): string {
   let u = (url ?? "").trim();
   u = u.replace(/^[a-z][a-z0-9+.-]*:\/\//i, ""); // scheme://
   u = u.replace(/^www\./i, "");
-  u = u.split(/[?#]/)[0];                          // drop query + fragment
-  u = u.replace(/\/+$/, "");                       // drop trailing slash(es)
-  return u.toLowerCase();
+  u = u.split("#")[0];                            // fragment never carries identity
+  const qIdx = u.indexOf("?");
+  const hostPath = qIdx === -1 ? u : u.slice(0, qIdx);
+  const query = qIdx === -1 ? "" : u.slice(qIdx + 1);
+  const slash = hostPath.indexOf("/");
+  const host = (slash === -1 ? hostPath : hostPath.slice(0, slash)).toLowerCase();
+  const path = (slash === -1 ? "" : hostPath.slice(slash)).replace(/\/+$/, "");
+
+  // 1. doi: — doi.org / dx.doi.org paths, or a DOI embedded in any publisher path.
+  const doi = path.match(RE_DOI);
+  if (doi) return `doi:${doi[0].toLowerCase().replace(/[.,;:!?)\]/]+$/, "")}`;
+
+  // 2. pmid: — pubmed.ncbi.nlm.nih.gov/<digits>
+  if (host === "pubmed.ncbi.nlm.nih.gov") {
+    const m = path.match(/^\/(\d+)$/);
+    if (m) return `pmid:${m[1]}`;
+  }
+
+  // 3. arxiv: — abs/pdf URL shapes; .pdf extension and version suffix stripped.
+  if (host === "arxiv.org") {
+    const m = path.match(/^\/(?:abs|pdf)\/(.+)$/);
+    if (m) return `arxiv:${m[1].replace(/\.pdf$/i, "").replace(/v\d+$/i, "").toLowerCase()}`;
+  }
+
+  // 4. yt: — video id preserved case-sensitively across all URL shapes.
+  if (host === "youtu.be") {
+    const id = path.replace(/^\//, "").split("/")[0];
+    if (id) return `yt:${id}`;
+  }
+  if (host === "youtube.com" || host === "m.youtube.com") {
+    const v = queryParams(query).get("v");
+    if (path === "/watch" && v) return `yt:${v}`;
+    const m = path.match(/^\/(?:shorts|live)\/([^/]+)/);
+    if (m) return `yt:${m[1]}`;
+  }
+
+  // 5. web: — host+path fallback plus identity-bearing query params.
+  let key = `${host}${path}`.toLowerCase();
+  const params = queryParams(query);
+  const kept: string[] = [];
+  for (const allowed of WEB_KEY_PARAMS) {
+    for (const [k, v] of params) {
+      if (k.toLowerCase() === allowed) { kept.push(`${allowed}=${v}`); break; }
+    }
+  }
+  if (kept.length) key += `?${kept.join("&")}`;
+  return `web:${key}`;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
