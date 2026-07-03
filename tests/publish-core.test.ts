@@ -105,6 +105,41 @@ describe("transformCanvas", () => {
     expect(r.artifact["x-distill"].nodes.n2.kind).toBe("claim");
   });
 
+  it("excludes draft nodes with a warning (same gate as file/link nodes)", () => {
+    const r = transformCanvas(canvas({
+      nodes: [
+        { id: "keep", type: "text", x: 0, y: 0, width: 1, height: 1, text: "Kept" },
+        { id: "wip", type: "text", x: 0, y: 0, width: 1, height: 1, text: "LLM draft", draft: true },
+      ],
+      edges: [{ id: "e", fromNode: "keep", toNode: "wip" }],
+    }), goodMeta(), "u");
+    expect(r.artifact.map.nodes.map((n) => n.id)).toEqual(["keep"]);
+    expect(r.excluded.some((e) => e.reason.includes("draft"))).toBe(true);
+    expect(r.warnings.some((w) => w.includes("draft node") && w.includes("LLM draft"))).toBe(true);
+    expect(r.artifact.map.edges).toHaveLength(0);              // edge to draft dropped
+  });
+
+  it("leaves non-draft nodes untouched (draft absent or false)", () => {
+    const r = transformCanvas(canvas({
+      nodes: [
+        { id: "a", type: "text", x: 0, y: 0, width: 1, height: 1, text: "a", draft: false },
+        { id: "b", type: "text", x: 0, y: 0, width: 1, height: 1, text: "b" },
+      ],
+      edges: [],
+    }), goodMeta(), "u");
+    expect(r.artifact.map.nodes.map((n) => n.id)).toEqual(["a", "b"]);
+    expect(r.warnings).toHaveLength(0);
+  });
+
+  it("carries ai_assisted into x-distill.authoring when set, omits it when not", () => {
+    const set = transformCanvas(canvas(), goodMeta({ ai_assisted: "drafted" }), "u");
+    expect(set.artifact["x-distill"].authoring).toEqual({ ai_assisted: "drafted" });
+    const unset = transformCanvas(canvas(), goodMeta(), "u");
+    expect(unset.artifact["x-distill"].authoring).toBeUndefined();
+    expect("authoring" in unset.artifact["x-distill"]).toBe(false);
+    expect(validateArtifact(set.artifact)).toHaveLength(0);    // additive — still valid
+  });
+
   it("preserves edge ends/sides and node color", () => {
     const r = transformCanvas(canvas({
       nodes: [
@@ -207,6 +242,12 @@ describe("buildSidecar", () => {
     const s = buildSidecar(multi);
     expect(s).toContain("A — https://a · paper · CC-BY-4.0 (accessed 2026-01-01)");
     expect(s).toContain("B — https://b · book · public-domain");
+  });
+
+  it("carries the ai_assisted disclosure into the frontmatter when set, omits it when not", () => {
+    const disclosed = transformCanvas(canvas(), goodMeta({ ai_assisted: "edited" }), "u").artifact;
+    expect(buildSidecar(disclosed)).toContain("ai_assisted: edited");
+    expect(buildSidecar(artifact)).not.toContain("ai_assisted:");
   });
 
   it("embeds the signature block when provided, omits it when absent", () => {

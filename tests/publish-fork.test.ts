@@ -132,6 +132,13 @@ describe("prepareForkImport", () => {
     expect(a["x-distill"].nodes.n1).toBeUndefined();
     expect(a["x-distill"].forked_from).toEqual(lineage);
   });
+
+  it("preserves a valid ai_assisted disclosure, drops an invalid one", () => {
+    const ok = sourceArtifact({ "x-distill": { nodes: {}, authoring: { ai_assisted: "drafted" } } });
+    expect(prepareForkImport(JSON.stringify(ok)).artifact!["x-distill"].authoring).toEqual({ ai_assisted: "drafted" });
+    const bad = sourceArtifact({ "x-distill": { nodes: {}, authoring: { ai_assisted: "fully-ai" } } });
+    expect(prepareForkImport(JSON.stringify(bad)).artifact!["x-distill"].authoring).toBeUndefined();
+  });
 });
 
 describe("sanitizeForkArtifact", () => {

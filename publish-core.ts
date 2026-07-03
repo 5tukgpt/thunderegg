@@ -21,6 +21,10 @@ export const SUMMARY_MAX = 500;
 export type Visibility = "private" | "followers" | "public";
 export const VISIBILITIES: readonly Visibility[] = ["private", "followers", "public"];
 
+/** AI-assistance disclosure. OPTIONAL — an absent value means undisclosed. */
+export type AiAssisted = "none" | "drafted" | "edited";
+export const AI_ASSISTED: readonly AiAssisted[] = ["none", "drafted", "edited"];
+
 export type NodeKind = "concept" | "source" | "question" | "claim";
 
 export const SOURCE_TYPES = [
@@ -54,6 +58,7 @@ export interface CanvasNode {
   file?: string;   // file nodes (vault path — never published)
   url?: string;    // link nodes
   color?: string;  // preset "1".."6" or hex
+  draft?: boolean; // custom property (JSON Canvas tolerates extras) — truthy = never exported
 }
 
 export interface CanvasEdge {
@@ -122,6 +127,8 @@ export interface PublishMeta {
   distill_version: string;
   /** Optional per-node kind overrides, keyed by node id. */
   kinds?: Record<string, NodeKind>;
+  /** Optional AI-assistance disclosure (absent = undisclosed). */
+  ai_assisted?: AiAssisted;
 }
 
 /**
@@ -150,6 +157,8 @@ export interface DistillMapArtifact {
   };
   "x-distill": {
     nodes: Record<string, { kind: NodeKind }>;
+    /** Present when the author disclosed AI assistance. */
+    authoring?: { ai_assisted: AiAssisted };
     /** Present when the exported canvas was forked from another map. */
     forked_from?: ForkLineage;
   };
@@ -297,6 +306,12 @@ export function transformCanvas(
   const includedIds = new Set<string>();
 
   for (const n of canvas.nodes ?? []) {
+    if (n.draft) {
+      // Forward-compat with LLM-drafted nodes: drafts never leave the device.
+      excluded.push({ id: n.id, type: n.type, reason: "draft node (never exported)" });
+      warnings.push(`Excluded draft node "${firstLine(n.text ?? "") || n.id}" — finish drafting it to publish it.`);
+      continue;
+    }
     if (n.type === "group") {
       // Visual-only; dropped silently (no warning) per spec.
       excluded.push({ id: n.id, type: "group", reason: "group (visual-only)" });
@@ -368,7 +383,11 @@ export function transformCanvas(
     topics: meta.topics,
     visibility: meta.visibility,
     map: { format: "jsoncanvas/1.0", nodes, edges },
-    "x-distill": { nodes: kinds, ...(lineage ? { forked_from: lineage } : {}) },
+    "x-distill": {
+      nodes: kinds,
+      ...(meta.ai_assisted !== undefined ? { authoring: { ai_assisted: meta.ai_assisted } } : {}),
+      ...(lineage ? { forked_from: lineage } : {}),
+    },
     provenance: meta.provenance.map((p) => ({ ...p, source_key: p.source_key ?? sourceKey(p.url) })),
     license: meta.license,
     distill_version: meta.distill_version,
@@ -526,6 +545,9 @@ export function buildSidecar(artifact: DistillMapArtifact, signature?: ArtifactS
     `visibility: ${artifact.visibility}`,
     `topics: [${topicsYaml}]`,
   ];
+  if (artifact["x-distill"].authoring) {
+    lines.push(`ai_assisted: ${artifact["x-distill"].authoring.ai_assisted}`);
+  }
   if (signature) {
     lines.push(
       `signature_algo: ${signature.algo}`,
@@ -703,6 +725,10 @@ export function sanitizeForkArtifact(raw: unknown): DistillMapArtifact | null {
       kinds[id] = { kind: k };
     }
   }
+  const auth = (xd && typeof xd === "object" ? xd.authoring : undefined) as Record<string, unknown> | undefined;
+  const ai = auth && typeof auth === "object" ? auth.ai_assisted : undefined;
+  const authoring: { ai_assisted: AiAssisted } | undefined =
+    ai === "none" || ai === "drafted" || ai === "edited" ? { ai_assisted: ai } : undefined;
   const fl = (xd && typeof xd === "object" ? xd.forked_from : undefined) as Record<string, unknown> | undefined;
   const forked_from: ForkLineage | undefined =
     fl && typeof fl === "object" &&
@@ -732,7 +758,7 @@ export function sanitizeForkArtifact(raw: unknown): DistillMapArtifact | null {
     topics: Array.isArray(a.topics) ? a.topics.filter((t): t is string => typeof t === "string") : [],
     visibility: (VISIBILITIES as readonly string[]).includes(str(a.visibility)) ? (a.visibility as Visibility) : "private",
     map: { format: "jsoncanvas/1.0", nodes, edges },
-    "x-distill": { nodes: kinds, ...(forked_from ? { forked_from } : {}) },
+    "x-distill": { nodes: kinds, ...(authoring ? { authoring } : {}), ...(forked_from ? { forked_from } : {}) },
     provenance,
     license: (str(a.license) || "unknown") as License,
     distill_version: str(a.distill_version),

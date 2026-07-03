@@ -8,8 +8,8 @@ import {
   Canvas, DistillMapArtifact, PublishMeta, ProvenanceEntry, NodeKind,
   transformCanvas, redactionScan, buildSidecar,
   checkForkMap, prepareForkImport, buildAttributionNote, buildForkReceipt,
-  SOURCE_TYPES, LICENSES, VISIBILITIES, SUMMARY_MIN, SUMMARY_MAX,
-  type Visibility, type License, type SourceType, type ForkLineage,
+  SOURCE_TYPES, LICENSES, VISIBILITIES, AI_ASSISTED, SUMMARY_MIN, SUMMARY_MAX,
+  type Visibility, type License, type SourceType, type ForkLineage, type AiAssisted,
 } from "./publish-core";
 import { publishArtifact, fetchForkFile } from "./publish-net";
 import { signArtifact, contentHash, type Signature } from "./publish-sign";
@@ -59,6 +59,7 @@ export class PublishModal extends Modal {
       provenance: [emptyProvenance()],
       distill_version: ctx.distillVersion,
       kinds: {},
+      ai_assisted: "none",
     };
   }
 
@@ -103,6 +104,14 @@ export class PublishModal extends Modal {
       .addDropdown((d) => {
         LICENSES.forEach((l) => d.addOption(l, l));
         d.setValue(this.meta.license).onChange((v) => { this.meta.license = v as License; this.refresh(); });
+      });
+
+    new Setting(contentEl)
+      .setName("AI assistance")
+      .setDesc("Disclose whether AI helped make this map (travels in the artifact).")
+      .addDropdown((d) => {
+        AI_ASSISTED.forEach((a) => d.addOption(a, a));
+        d.setValue(this.meta.ai_assisted ?? "none").onChange((v) => { this.meta.ai_assisted = v as AiAssisted; this.refresh(); });
       });
 
     // Provenance editor

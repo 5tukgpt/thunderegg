@@ -121,6 +121,7 @@ var NODE_TEXT_CAP = 280;
 var SUMMARY_MIN = 150;
 var SUMMARY_MAX = 500;
 var VISIBILITIES = ["private", "followers", "public"];
+var AI_ASSISTED = ["none", "drafted", "edited"];
 var SOURCE_TYPES = [
   "book",
   "paper",
@@ -234,6 +235,11 @@ function transformCanvas(canvas, meta, clientUuid, lineage) {
   const kinds = {};
   const includedIds = /* @__PURE__ */ new Set();
   for (const n of canvas.nodes ?? []) {
+    if (n.draft) {
+      excluded.push({ id: n.id, type: n.type, reason: "draft node (never exported)" });
+      warnings.push(`Excluded draft node "${firstLine(n.text ?? "") || n.id}" \u2014 finish drafting it to publish it.`);
+      continue;
+    }
     if (n.type === "group") {
       excluded.push({ id: n.id, type: "group", reason: "group (visual-only)" });
       continue;
@@ -300,7 +306,11 @@ function transformCanvas(canvas, meta, clientUuid, lineage) {
     topics: meta.topics,
     visibility: meta.visibility,
     map: { format: "jsoncanvas/1.0", nodes, edges },
-    "x-distill": { nodes: kinds, ...lineage ? { forked_from: lineage } : {} },
+    "x-distill": {
+      nodes: kinds,
+      ...meta.ai_assisted !== void 0 ? { authoring: { ai_assisted: meta.ai_assisted } } : {},
+      ...lineage ? { forked_from: lineage } : {}
+    },
     provenance: meta.provenance.map((p) => ({ ...p, source_key: p.source_key ?? sourceKey(p.url) })),
     license: meta.license,
     distill_version: meta.distill_version
@@ -396,6 +406,9 @@ function buildSidecar(artifact, signature) {
     `visibility: ${artifact.visibility}`,
     `topics: [${topicsYaml}]`
   ];
+  if (artifact["x-distill"].authoring) {
+    lines.push(`ai_assisted: ${artifact["x-distill"].authoring.ai_assisted}`);
+  }
   if (signature) {
     lines.push(
       `signature_algo: ${signature.algo}`,
@@ -555,6 +568,9 @@ function sanitizeForkArtifact(raw) {
       kinds[id] = { kind: k };
     }
   }
+  const auth = xd && typeof xd === "object" ? xd.authoring : void 0;
+  const ai = auth && typeof auth === "object" ? auth.ai_assisted : void 0;
+  const authoring = ai === "none" || ai === "drafted" || ai === "edited" ? { ai_assisted: ai } : void 0;
   const fl = xd && typeof xd === "object" ? xd.forked_from : void 0;
   const forked_from = fl && typeof fl === "object" && typeof fl.client_uuid === "string" && typeof fl.author_fingerprint === "string" && typeof fl.content_hash === "string" ? { client_uuid: fl.client_uuid, author_fingerprint: fl.author_fingerprint, content_hash: fl.content_hash } : void 0;
   const provenance = [];
@@ -579,7 +595,7 @@ function sanitizeForkArtifact(raw) {
     topics: Array.isArray(a.topics) ? a.topics.filter((t) => typeof t === "string") : [],
     visibility: VISIBILITIES.includes(str(a.visibility)) ? a.visibility : "private",
     map: { format: "jsoncanvas/1.0", nodes, edges },
-    "x-distill": { nodes: kinds, ...forked_from ? { forked_from } : {} },
+    "x-distill": { nodes: kinds, ...authoring ? { authoring } : {}, ...forked_from ? { forked_from } : {} },
     provenance,
     license: str(a.license) || "unknown",
     distill_version: str(a.distill_version)
@@ -804,7 +820,8 @@ var PublishModal = class extends import_obsidian2.Modal {
       license: ctx.defaultLicense,
       provenance: [emptyProvenance()],
       distill_version: ctx.distillVersion,
-      kinds: {}
+      kinds: {},
+      ai_assisted: "none"
     };
   }
   onOpen() {
@@ -838,6 +855,13 @@ var PublishModal = class extends import_obsidian2.Modal {
       LICENSES.forEach((l) => d.addOption(l, l));
       d.setValue(this.meta.license).onChange((v) => {
         this.meta.license = v;
+        this.refresh();
+      });
+    });
+    new import_obsidian2.Setting(contentEl).setName("AI assistance").setDesc("Disclose whether AI helped make this map (travels in the artifact).").addDropdown((d) => {
+      AI_ASSISTED.forEach((a) => d.addOption(a, a));
+      d.setValue(this.meta.ai_assisted ?? "none").onChange((v) => {
+        this.meta.ai_assisted = v;
         this.refresh();
       });
     });
