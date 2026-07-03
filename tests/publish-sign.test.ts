@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { generateKeyPairSync, createPublicKey } from "crypto";
-import { signBytes, verifyBytes, publicKeySpki, keyFingerprint } from "../publish-sign";
+import { generateKeyPairSync, createPublicKey, createHash } from "crypto";
+import { signBytes, verifyBytes, publicKeySpki, keyFingerprint, contentHash } from "../publish-sign";
 
 function freshKeypair() {
   const { privateKey } = generateKeyPairSync("ed25519");
@@ -33,6 +33,18 @@ describe("ed25519 sign/verify", () => {
     const { pubSpki } = freshKeypair();
     expect(verifyBytes("x", "not-base64-sig", pubSpki)).toBe(false);
     expect(verifyBytes("x", "", "not-a-key")).toBe(false);
+  });
+});
+
+describe("contentHash", () => {
+  it("is sha256 hex over UTF-8, stable across calls", () => {
+    const data = JSON.stringify({ schema: "distill.map/0.2", title: "Fork" }, null, 2);
+    const expected = createHash("sha256").update(data, "utf8").digest("hex");
+    expect(contentHash(data)).toBe(expected);
+    expect(contentHash(data)).toMatch(/^[0-9a-f]{64}$/);
+  });
+  it("differs on a single-byte change", () => {
+    expect(contentHash("map")).not.toBe(contentHash("map "));
   });
 });
 

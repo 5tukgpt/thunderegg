@@ -159,15 +159,74 @@ function firstLine(text) {
 function inferKind(text) {
   return firstLine(text).endsWith("?") ? "question" : "concept";
 }
+var RE_DOI = /10\.\d{4,9}\/\S+/;
+var WEB_KEY_PARAMS = ["article", "id", "p"];
+function queryParams(query) {
+  const params = /* @__PURE__ */ new Map();
+  for (const pair of query.split("&")) {
+    if (!pair)
+      continue;
+    const eq = pair.indexOf("=");
+    const k = eq === -1 ? pair : pair.slice(0, eq);
+    const v = eq === -1 ? "" : pair.slice(eq + 1);
+    if (!params.has(k))
+      params.set(k, v);
+  }
+  return params;
+}
 function sourceKey(url) {
   let u = (url ?? "").trim();
   u = u.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "");
   u = u.replace(/^www\./i, "");
-  u = u.split(/[?#]/)[0];
-  u = u.replace(/\/+$/, "");
-  return u.toLowerCase();
+  u = u.split("#")[0];
+  const qIdx = u.indexOf("?");
+  const hostPath = qIdx === -1 ? u : u.slice(0, qIdx);
+  const query = qIdx === -1 ? "" : u.slice(qIdx + 1);
+  const slash = hostPath.indexOf("/");
+  const host = (slash === -1 ? hostPath : hostPath.slice(0, slash)).toLowerCase();
+  const path4 = (slash === -1 ? "" : hostPath.slice(slash)).replace(/\/+$/, "");
+  const doi = path4.match(RE_DOI);
+  if (doi)
+    return `doi:${doi[0].toLowerCase().replace(/[.,;:!?)\]/]+$/, "")}`;
+  if (host === "pubmed.ncbi.nlm.nih.gov") {
+    const m = path4.match(/^\/(\d+)$/);
+    if (m)
+      return `pmid:${m[1]}`;
+  }
+  if (host === "arxiv.org") {
+    const m = path4.match(/^\/(?:abs|pdf)\/(.+)$/);
+    if (m)
+      return `arxiv:${m[1].replace(/\.pdf$/i, "").replace(/v\d+$/i, "").toLowerCase()}`;
+  }
+  if (host === "youtu.be") {
+    const id = path4.replace(/^\//, "").split("/")[0];
+    if (id)
+      return `yt:${id}`;
+  }
+  if (host === "youtube.com" || host === "m.youtube.com") {
+    const v = queryParams(query).get("v");
+    if (path4 === "/watch" && v)
+      return `yt:${v}`;
+    const m = path4.match(/^\/(?:shorts|live)\/([^/]+)/);
+    if (m)
+      return `yt:${m[1]}`;
+  }
+  let key = `${host}${path4}`.toLowerCase();
+  const params = queryParams(query);
+  const kept = [];
+  for (const allowed of WEB_KEY_PARAMS) {
+    for (const [k, v] of params) {
+      if (k.toLowerCase() === allowed) {
+        kept.push(`${allowed}=${v}`);
+        break;
+      }
+    }
+  }
+  if (kept.length)
+    key += `?${kept.join("&")}`;
+  return `web:${key}`;
 }
-function transformCanvas(canvas, meta, clientUuid) {
+function transformCanvas(canvas, meta, clientUuid, lineage) {
   const warnings = [];
   const blocking = [];
   const excluded = [];
@@ -241,7 +300,7 @@ function transformCanvas(canvas, meta, clientUuid) {
     topics: meta.topics,
     visibility: meta.visibility,
     map: { format: "jsoncanvas/1.0", nodes, edges },
-    "x-distill": { nodes: kinds },
+    "x-distill": { nodes: kinds, ...lineage ? { forked_from: lineage } : {} },
     provenance: meta.provenance.map((p) => ({ ...p, source_key: p.source_key ?? sourceKey(p.url) })),
     license: meta.license,
     distill_version: meta.distill_version
@@ -382,6 +441,216 @@ function parseSidecarSignature(md) {
     return null;
   return { algo, public_key, signature };
 }
+var FORK_MAX_BYTES = 2 * 1024 * 1024;
+var FORK_MAX_NODES = 500;
+function sanitizeMapNode(raw) {
+  const n = raw;
+  if (!n || typeof n !== "object")
+    return null;
+  if (n.type !== "text" || typeof n.id !== "string" || typeof n.text !== "string")
+    return null;
+  if (typeof n.x !== "number" || typeof n.y !== "number" || typeof n.width !== "number" || typeof n.height !== "number")
+    return null;
+  return {
+    id: n.id,
+    type: "text",
+    x: n.x,
+    y: n.y,
+    width: n.width,
+    height: n.height,
+    text: n.text,
+    ...typeof n.color === "string" ? { color: n.color } : {}
+  };
+}
+function sanitizeMapEdge(raw) {
+  const e = raw;
+  if (!e || typeof e !== "object")
+    return null;
+  if (typeof e.id !== "string" || typeof e.fromNode !== "string" || typeof e.toNode !== "string")
+    return null;
+  return {
+    id: e.id,
+    fromNode: e.fromNode,
+    toNode: e.toNode,
+    ...typeof e.fromSide === "string" ? { fromSide: e.fromSide } : {},
+    ...typeof e.toSide === "string" ? { toSide: e.toSide } : {},
+    ...typeof e.fromEnd === "string" ? { fromEnd: e.fromEnd } : {},
+    ...typeof e.toEnd === "string" ? { toEnd: e.toEnd } : {},
+    ...typeof e.label === "string" ? { label: e.label } : {},
+    ...typeof e.color === "string" ? { color: e.color } : {}
+  };
+}
+function checkForkMap(map) {
+  const warnings = [];
+  const blocking = [];
+  const rawNodes = map?.nodes ?? [];
+  if (rawNodes.length > FORK_MAX_NODES) {
+    blocking.push(`Map has ${rawNodes.length} nodes (max ${FORK_MAX_NODES}) \u2014 refusing to import.`);
+    return { nodes: [], edges: [], warnings, blocking };
+  }
+  const nodes = [];
+  const overCap = [];
+  let skipped = 0;
+  for (const raw of rawNodes) {
+    const n = sanitizeMapNode(raw);
+    if (!n) {
+      skipped++;
+      continue;
+    }
+    if (n.text.length > NODE_TEXT_CAP) {
+      overCap.push(`"${firstLine(n.text).slice(0, 40)}\u2026" (${n.text.length} chars)`);
+      continue;
+    }
+    nodes.push(n);
+  }
+  if (skipped)
+    warnings.push(`Skipped ${skipped} node(s) that are not schema text nodes.`);
+  if (overCap.length) {
+    warnings.push(`Rejected ${overCap.length} node(s) over the ${NODE_TEXT_CAP}-char cap: ${overCap.join(", ")}. The rest were imported.`);
+  }
+  if (nodes.length === 0)
+    blocking.push("This map has no importable text nodes.");
+  const includedIds = new Set(nodes.map((n) => n.id));
+  const edges = [];
+  let dropped = 0;
+  for (const raw of map?.edges ?? []) {
+    const e = sanitizeMapEdge(raw);
+    if (!e || !includedIds.has(e.fromNode) || !includedIds.has(e.toNode)) {
+      dropped++;
+      continue;
+    }
+    edges.push(e);
+  }
+  if (dropped)
+    warnings.push(`Dropped ${dropped} edge(s) that were malformed or connected to a rejected node.`);
+  return { nodes, edges, warnings, blocking };
+}
+function sanitizeForkArtifact(raw) {
+  const a = raw;
+  if (!a || typeof a !== "object")
+    return null;
+  const map = a.map;
+  if (!map || typeof map !== "object")
+    return null;
+  const str = (v) => typeof v === "string" ? v : "";
+  const nodes = [];
+  for (const n of Array.isArray(map.nodes) ? map.nodes : []) {
+    const s = sanitizeMapNode(n);
+    if (s)
+      nodes.push(s);
+  }
+  const includedIds = new Set(nodes.map((n) => n.id));
+  const edges = [];
+  for (const e of Array.isArray(map.edges) ? map.edges : []) {
+    const s = sanitizeMapEdge(e);
+    if (s && includedIds.has(s.fromNode) && includedIds.has(s.toNode))
+      edges.push(s);
+  }
+  const xd = a["x-distill"];
+  const kinds = {};
+  const rawKinds = xd && typeof xd === "object" ? xd.nodes ?? {} : {};
+  for (const id of Object.keys(rawKinds)) {
+    const k = rawKinds[id]?.kind;
+    if (includedIds.has(id) && (k === "concept" || k === "source" || k === "question" || k === "claim")) {
+      kinds[id] = { kind: k };
+    }
+  }
+  const fl = xd && typeof xd === "object" ? xd.forked_from : void 0;
+  const forked_from = fl && typeof fl === "object" && typeof fl.client_uuid === "string" && typeof fl.author_fingerprint === "string" && typeof fl.content_hash === "string" ? { client_uuid: fl.client_uuid, author_fingerprint: fl.author_fingerprint, content_hash: fl.content_hash } : void 0;
+  const provenance = [];
+  for (const raw2 of Array.isArray(a.provenance) ? a.provenance : []) {
+    const p = raw2;
+    if (!p || typeof p !== "object")
+      continue;
+    provenance.push({
+      source_title: str(p.source_title),
+      url: str(p.url),
+      source_type: str(p.source_type),
+      license: str(p.license),
+      ...typeof p.accessed === "string" ? { accessed: p.accessed } : {},
+      ...typeof p.source_key === "string" ? { source_key: p.source_key } : {}
+    });
+  }
+  return {
+    schema: "distill.map/0.2",
+    client_uuid: str(a.client_uuid),
+    title: str(a.title),
+    summary: str(a.summary),
+    topics: Array.isArray(a.topics) ? a.topics.filter((t) => typeof t === "string") : [],
+    visibility: VISIBILITIES.includes(str(a.visibility)) ? a.visibility : "private",
+    map: { format: "jsoncanvas/1.0", nodes, edges },
+    "x-distill": { nodes: kinds, ...forked_from ? { forked_from } : {} },
+    provenance,
+    license: str(a.license) || "unknown",
+    distill_version: str(a.distill_version)
+  };
+}
+function prepareForkImport(json) {
+  const bytes = new TextEncoder().encode(json).length;
+  if (bytes > FORK_MAX_BYTES) {
+    return { artifact: null, blocking: [`File is ${bytes} bytes (max ${FORK_MAX_BYTES}) \u2014 refusing to import.`] };
+  }
+  let raw;
+  try {
+    raw = JSON.parse(json);
+  } catch {
+    return { artifact: null, blocking: ["File is not valid JSON."] };
+  }
+  const artifact = sanitizeForkArtifact(raw);
+  if (!artifact)
+    return { artifact: null, blocking: ["File is not a distill map artifact (no map object)."] };
+  return { artifact, blocking: [] };
+}
+function buildAttributionNote(a) {
+  const lines = [
+    "---",
+    `forked_from: ${a.forkedFrom}`,
+    `author: ${a.author}`,
+    `license: ${a.license}`,
+    `source_url: ${a.sourceUrl}`
+  ];
+  if (a.lineage) {
+    lines.push(
+      `lineage_client_uuid: ${a.lineage.client_uuid}`,
+      `lineage_author_fingerprint: ${a.lineage.author_fingerprint}`,
+      `lineage_content_hash: ${a.lineage.content_hash}`
+    );
+  }
+  lines.push(
+    "---",
+    "",
+    `# ${a.displayTitle} (forked)`,
+    "",
+    `Forked from [@${a.author}](${a.sourceUrl}). License: ${a.license}.`,
+    "",
+    `The map is in \`${a.canvasName}.canvas\` in this folder.`,
+    ""
+  );
+  return lines.join("\n");
+}
+function parseLineageFrontmatter(md) {
+  const field = (name) => {
+    const m = md.match(new RegExp(`^${name}:[ \\t]*(.+)$`, "m"));
+    return m ? m[1].trim() : null;
+  };
+  const client_uuid = field("lineage_client_uuid");
+  const author_fingerprint = field("lineage_author_fingerprint");
+  const content_hash = field("lineage_content_hash");
+  if (!client_uuid || !author_fingerprint || !content_hash)
+    return null;
+  return { client_uuid, author_fingerprint, content_hash };
+}
+function buildForkReceipt(artifact, lineage) {
+  const sources = artifact.provenance.map((p) => p.source_key ?? sourceKey(p.url)).filter((s) => s && s !== "web:");
+  const lines = [
+    `Forked "${artifact.title}" via Distill`,
+    `- author: \`${lineage.author_fingerprint}\``,
+    `- content: \`${lineage.content_hash.slice(0, 12)}\u2026\``
+  ];
+  if (sources.length)
+    lines.push(`- sources: ${sources.map((s) => `\`${s}\``).join(", ")}`);
+  return lines.join("\n");
+}
 
 // publish-net.ts
 var import_obsidian = require("obsidian");
@@ -480,6 +749,9 @@ function verifyBytes(data, signatureB64, publicKeySpkiB64) {
 function keyFingerprint(publicKeySpkiB64) {
   return (0, import_crypto.createHash)("sha256").update(publicKeySpkiB64).digest("hex").slice(0, 16);
 }
+function contentHash(data) {
+  return (0, import_crypto.createHash)("sha256").update(data, "utf8").digest("hex");
+}
 function getOrCreateSigningKey() {
   try {
     return (0, import_crypto.createPrivateKey)(fs2.readFileSync(KEY_FILE, "utf8"));
@@ -518,10 +790,11 @@ function emptyProvenance() {
   return { source_title: "", url: "", source_type: "webpage", license: "public-domain" };
 }
 var PublishModal = class extends import_obsidian2.Modal {
-  constructor(app, canvas, defaultTitle, ctx) {
+  constructor(app, canvas, defaultTitle, ctx, lineage) {
     super(app);
     this.canvas = canvas;
     this.ctx = ctx;
+    this.lineage = lineage;
     this.clientUuid = crypto.randomUUID();
     this.meta = {
       title: defaultTitle,
@@ -629,7 +902,7 @@ var PublishModal = class extends import_obsidian2.Modal {
   }
   /** Re-run the transform + redaction and repaint preview + issues + button state. */
   refresh() {
-    const { artifact, warnings, blocking, excluded } = transformCanvas(this.canvas, this.meta, this.clientUuid);
+    const { artifact, warnings, blocking, excluded } = transformCanvas(this.canvas, this.meta, this.clientUuid, this.lineage);
     const redaction = redactionScan(artifact, this.ctx.blockedZones);
     this.previewEl.setText(JSON.stringify(artifact, null, 2));
     this.issuesEl.empty();
@@ -653,7 +926,7 @@ var PublishModal = class extends import_obsidian2.Modal {
     this.exportBtn.title = blocks.length ? "Resolve the blocking issues above." : "Write a shareable map file into your vault \u2014 no account needed.";
   }
   async doPublish() {
-    const { artifact } = transformCanvas(this.canvas, this.meta, this.clientUuid);
+    const { artifact } = transformCanvas(this.canvas, this.meta, this.clientUuid, this.lineage);
     const notice = new import_obsidian2.Notice("Distill: publishing\u2026", 0);
     try {
       const res = await publishArtifact(this.ctx.baseUrl, this.ctx.token, artifact);
@@ -667,7 +940,7 @@ var PublishModal = class extends import_obsidian2.Modal {
   }
   /** Write a shareable map file (+ provenance sidecar) into the vault. No account, no network. */
   async doExport() {
-    const { artifact } = transformCanvas(this.canvas, this.meta, this.clientUuid);
+    const { artifact } = transformCanvas(this.canvas, this.meta, this.clientUuid, this.lineage);
     const folder = "Distill Exports";
     if (!this.app.vault.getAbstractFileByPath(folder)) {
       try {
@@ -699,47 +972,110 @@ var PublishModal = class extends import_obsidian2.Modal {
 function safeName(s) {
   return (s || "map").replace(/[\\/:*?"<>|]/g, "-").slice(0, 80).trim() || "map";
 }
+async function importMapPayload(app, payload, opts) {
+  const check = checkForkMap(payload.map);
+  if (check.blocking.length)
+    throw new Error(check.blocking.join(" "));
+  const folder = "Forked";
+  if (!app.vault.getAbstractFileByPath(folder)) {
+    try {
+      await app.vault.createFolder(folder);
+    } catch {
+    }
+  }
+  const title = safeName(payload.title ?? opts.forkedFrom);
+  const canvasBody = JSON.stringify({ nodes: check.nodes, edges: check.edges }, null, 2);
+  const canvasPath = (0, import_obsidian2.normalizePath)(`${folder}/${title}.canvas`);
+  await writeOrReplace(app, canvasPath, canvasBody);
+  if (opts.sourceJson !== void 0) {
+    await writeOrReplace(app, (0, import_obsidian2.normalizePath)(`${folder}/${title}.distill.json`), opts.sourceJson);
+  }
+  const attribution = buildAttributionNote({
+    displayTitle: payload.title ?? title,
+    canvasName: title,
+    forkedFrom: opts.forkedFrom,
+    author: opts.author,
+    license: payload.license ?? "unknown",
+    sourceUrl: opts.sourceUrl,
+    ...opts.lineage ? { lineage: opts.lineage } : {}
+  });
+  await writeOrReplace(app, (0, import_obsidian2.normalizePath)(`${folder}/${title} \u2014 source.md`), attribution);
+  for (const w of check.warnings)
+    new import_obsidian2.Notice(`\u26A0\uFE0F ${w}`, 8e3);
+  new import_obsidian2.Notice(`\u2705 Forked "${payload.title ?? title}" into ${folder}/`);
+  const f = app.vault.getAbstractFileByPath(canvasPath);
+  if (f instanceof import_obsidian2.TFile)
+    app.workspace.getLeaf(true).openFile(f);
+}
 async function importForkedMap(app, baseUrl, mapId) {
   const notice = new import_obsidian2.Notice("Distill: forking map\u2026", 0);
   try {
     const data = await fetchForkFile(baseUrl, mapId);
-    const title = safeName(data.title ?? mapId);
-    const folder = "Forked";
-    if (!app.vault.getAbstractFileByPath(folder)) {
-      try {
-        await app.vault.createFolder(folder);
-      } catch {
-      }
-    }
-    const canvasBody = JSON.stringify({ nodes: data.map?.nodes ?? [], edges: data.map?.edges ?? [] }, null, 2);
-    const canvasPath = (0, import_obsidian2.normalizePath)(`${folder}/${title}.canvas`);
-    await writeOrReplace(app, canvasPath, canvasBody);
     const author = data.author?.handle ?? "unknown";
     const link = `${baseUrl.replace(/\/+$/, "")}/@${author}/${data.id ?? mapId}`;
-    const attribution = `---
-forked_from: ${data.id ?? mapId}
-author: ${author}
-license: ${data.license ?? "unknown"}
-source_url: ${link}
----
-
-# ${data.title ?? title} (forked)
-
-Forked from [@${author}](${link}). License: ${data.license ?? "unknown"}.
-
-The map is in \`${title}.canvas\` in this folder.
-`;
-    await writeOrReplace(app, (0, import_obsidian2.normalizePath)(`${folder}/${title} \u2014 source.md`), attribution);
+    await importMapPayload(app, data, {
+      author,
+      forkedFrom: data.id ?? mapId,
+      sourceUrl: link
+    });
     notice.hide();
-    new import_obsidian2.Notice(`\u2705 Forked "${data.title ?? title}" into ${folder}/`);
-    const f = app.vault.getAbstractFileByPath(canvasPath);
-    if (f instanceof import_obsidian2.TFile)
-      app.workspace.getLeaf(true).openFile(f);
   } catch (e) {
     notice.hide();
     new import_obsidian2.Notice(`\u274C Fork failed: ${e instanceof Error ? e.message : String(e)}`, 8e3);
   }
 }
+async function forkMapFileIntoVault(app, sourcePath, json, authorFingerprint) {
+  const notice = new import_obsidian2.Notice("Distill: forking map\u2026", 0);
+  try {
+    const prep = prepareForkImport(json);
+    if (prep.blocking.length || !prep.artifact)
+      throw new Error(prep.blocking.join(" "));
+    const artifact = prep.artifact;
+    const canonical = JSON.stringify(artifact, null, 2);
+    const lineage = {
+      client_uuid: artifact.client_uuid,
+      author_fingerprint: authorFingerprint ?? "unsigned",
+      content_hash: contentHash(canonical)
+    };
+    await importMapPayload(app, artifact, {
+      author: lineage.author_fingerprint,
+      forkedFrom: artifact.client_uuid,
+      sourceUrl: sourcePath,
+      sourceJson: canonical,
+      lineage
+    });
+    notice.hide();
+    new import_obsidian2.Notice("Fork receipt ready \u2014 run \u201CDistill: Copy fork receipt\u201D to share it.");
+    return buildForkReceipt(artifact, lineage);
+  } catch (e) {
+    notice.hide();
+    new import_obsidian2.Notice(`\u274C Fork failed: ${e instanceof Error ? e.message : String(e)}`, 8e3);
+    return null;
+  }
+}
+var ConfirmForkModal = class extends import_obsidian2.Modal {
+  constructor(app, problem, onConfirm) {
+    super(app);
+    this.problem = problem;
+    this.onConfirm = onConfirm;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h2", { text: "Fork unverified map?" });
+    contentEl.createEl("p", {
+      cls: "setting-item-description",
+      text: `This map's authorship could not be verified: ${this.problem}. Fork it only if you trust where it came from.`
+    });
+    new import_obsidian2.Setting(contentEl).addButton((b) => b.setButtonText("Cancel").onClick(() => this.close())).addButton((b) => b.setWarning().setButtonText("Fork anyway (unverified)").onClick(() => {
+      this.close();
+      this.onConfirm();
+    }));
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
 async function writeOrReplace(app, path4, content) {
   const existing = app.vault.getAbstractFileByPath(path4);
   if (existing instanceof import_obsidian2.TFile) {
@@ -773,6 +1109,7 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
     /* State */
     this.distillAvailable = false;
     this.bonds = emptyBondGraph();
+    this.lastForkReceipt = null;
   }
   /* ── Lifecycle ──────────────────────────────────────────────── */
   async onload() {
@@ -795,6 +1132,9 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
         } else if (file instanceof import_obsidian3.TFile && file.name.toLowerCase().endsWith(".distill.json")) {
           menu.addItem(
             (item) => item.setTitle("Verify signature (Distill)").setIcon("shield-check").onClick(() => this.verifyMapFile(file))
+          );
+          menu.addItem(
+            (item) => item.setTitle("Fork map file into vault (Distill)").setIcon("git-fork").onClick(() => this.forkMapFile(file))
           );
         } else if (file instanceof import_obsidian3.TFolder) {
           menu.addItem(
@@ -838,6 +1178,29 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
         const ok = !!f && f.name.toLowerCase().endsWith(".distill.json");
         if (ok && !checking)
           this.verifyMapFile(f);
+        return ok;
+      }
+    });
+    this.addCommand({
+      id: "distill-fork-map-file",
+      name: "Fork map file into vault",
+      checkCallback: (checking) => {
+        const f = this.app.workspace.getActiveFile();
+        const ok = !!f && f.name.toLowerCase().endsWith(".distill.json");
+        if (ok && !checking)
+          this.forkMapFile(f);
+        return ok;
+      }
+    });
+    this.addCommand({
+      id: "distill-copy-fork-receipt",
+      name: "Copy fork receipt",
+      checkCallback: (checking) => {
+        const ok = this.lastForkReceipt !== null;
+        if (ok && !checking) {
+          navigator.clipboard.writeText(this.lastForkReceipt);
+          new import_obsidian3.Notice("Distill: fork receipt copied \u2014 paste it wherever you self-report.");
+        }
         return ok;
       }
     });
@@ -1068,7 +1431,13 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
       defaultVisibility: this.settings.defaultVisibility,
       defaultLicense: this.settings.defaultLicense
     };
-    new PublishModal(this.app, canvas, file.basename, ctx).open();
+    let lineage;
+    const notePath = (0, import_obsidian3.normalizePath)(file.path.replace(/[^/]+$/, `${file.basename} \u2014 source.md`));
+    const note = this.app.vault.getAbstractFileByPath(notePath);
+    if (note instanceof import_obsidian3.TFile) {
+      lineage = parseLineageFrontmatter(await this.app.vault.read(note)) ?? void 0;
+    }
+    new PublishModal(this.app, canvas, file.basename, ctx, lineage).open();
   }
   /** Verify the Ed25519 signature on an exported .distill.json against its sidecar. */
   async verifyMapFile(file) {
@@ -1093,6 +1462,44 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
       );
     } catch (e) {
       new import_obsidian3.Notice(`Distill: verify failed \u2014 ${e?.message ?? e}`);
+    }
+  }
+  /** Fork a local .distill.json into Forked/, verifying its signature first. */
+  async forkMapFile(file) {
+    try {
+      const json = await this.app.vault.read(file);
+      const base = file.name.replace(/\.distill\.json$/i, "");
+      const sidecarPath = (0, import_obsidian3.normalizePath)(file.path.replace(/[^/]+$/, `${base} \u2014 provenance.md`));
+      const sidecar = this.app.vault.getAbstractFileByPath(sidecarPath);
+      let fingerprint = null;
+      let problem = null;
+      if (!(sidecar instanceof import_obsidian3.TFile)) {
+        problem = "no provenance sidecar found next to this map";
+      } else {
+        const sig = parseSidecarSignature(await this.app.vault.read(sidecar));
+        if (!sig) {
+          problem = "the sidecar has no signature block (unsigned map)";
+        } else if (!verifyBytes(json, sig.signature, sig.public_key)) {
+          problem = "the signature is INVALID \u2014 the map may have been altered";
+        } else {
+          fingerprint = keyFingerprint(sig.public_key);
+        }
+      }
+      const run = async () => {
+        const receipt = await forkMapFileIntoVault(this.app, file.path, json, fingerprint);
+        if (receipt)
+          this.lastForkReceipt = receipt;
+      };
+      if (problem) {
+        new import_obsidian3.Notice(`Distill: ${problem}.`, 8e3);
+        new ConfirmForkModal(this.app, problem, () => {
+          void run();
+        }).open();
+      } else {
+        await run();
+      }
+    } catch (e) {
+      new import_obsidian3.Notice(`Distill: fork failed \u2014 ${e?.message ?? e}`);
     }
   }
   /* ═════════════════════════════════════════════════════════════════

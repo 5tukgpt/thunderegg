@@ -13,10 +13,10 @@ import {
   BondGraph, emptyBondGraph, buildBondGraph,
   bondCount, isCondenser, referencingCondensers,
 } from "./core";
-import type { Canvas, Visibility, License } from "./publish-core";
-import { PublishModal, importForkedMap, type PublishContext } from "./publish-ui";
+import type { Canvas, Visibility, License, ForkLineage } from "./publish-core";
+import { PublishModal, importForkedMap, forkMapFileIntoVault, ConfirmForkModal, type PublishContext } from "./publish-ui";
 import { readDeviceToken, writeDeviceToken, clearDeviceToken, hasDeviceToken } from "./publish-net";
-import { parseSidecarSignature } from "./publish-core";
+import { parseSidecarSignature, parseLineageFrontmatter } from "./publish-core";
 import { signingKeyFingerprint, verifyBytes, keyFingerprint } from "./publish-sign";
 
 const execAsync = promisify(exec);
@@ -80,6 +80,7 @@ export default class DistillBridgePlugin extends Plugin {
   /* State */
   private distillAvailable = false;
   private bonds: BondGraph = emptyBondGraph();
+  private lastForkReceipt: string | null = null;
 
   /* ── Lifecycle ──────────────────────────────────────────────── */
 
@@ -117,6 +118,12 @@ export default class DistillBridgePlugin extends Plugin {
               .setTitle("Verify signature (Distill)")
               .setIcon("shield-check")
               .onClick(() => this.verifyMapFile(file)),
+          );
+          menu.addItem((item) =>
+            item
+              .setTitle("Fork map file into vault (Distill)")
+              .setIcon("git-fork")
+              .onClick(() => this.forkMapFile(file)),
           );
         } else if (file instanceof TFolder) {
           menu.addItem((item) =>
@@ -165,6 +172,30 @@ export default class DistillBridgePlugin extends Plugin {
         const f = this.app.workspace.getActiveFile();
         const ok = !!f && f.name.toLowerCase().endsWith(".distill.json");
         if (ok && !checking) this.verifyMapFile(f as TFile);
+        return ok;
+      },
+    });
+
+    this.addCommand({
+      id: "distill-fork-map-file",
+      name: "Fork map file into vault",
+      checkCallback: (checking: boolean) => {
+        const f = this.app.workspace.getActiveFile();
+        const ok = !!f && f.name.toLowerCase().endsWith(".distill.json");
+        if (ok && !checking) this.forkMapFile(f as TFile);
+        return ok;
+      },
+    });
+
+    this.addCommand({
+      id: "distill-copy-fork-receipt",
+      name: "Copy fork receipt",
+      checkCallback: (checking: boolean) => {
+        const ok = this.lastForkReceipt !== null;
+        if (ok && !checking) {
+          navigator.clipboard.writeText(this.lastForkReceipt as string);
+          new Notice("Distill: fork receipt copied — paste it wherever you self-report.");
+        }
         return ok;
       },
     });
@@ -440,7 +471,14 @@ export default class DistillBridgePlugin extends Plugin {
       defaultVisibility: this.settings.defaultVisibility,
       defaultLicense: this.settings.defaultLicense,
     };
-    new PublishModal(this.app, canvas, file.basename, ctx).open();
+    // Forked canvases carry their lineage receipt into the export (x-distill.forked_from).
+    let lineage: ForkLineage | undefined;
+    const notePath = normalizePath(file.path.replace(/[^/]+$/, `${file.basename} — source.md`));
+    const note = this.app.vault.getAbstractFileByPath(notePath);
+    if (note instanceof TFile) {
+      lineage = parseLineageFrontmatter(await this.app.vault.read(note)) ?? undefined;
+    }
+    new PublishModal(this.app, canvas, file.basename, ctx, lineage).open();
   }
 
   /** Verify the Ed25519 signature on an exported .distill.json against its sidecar. */
@@ -468,6 +506,45 @@ export default class DistillBridgePlugin extends Plugin {
       );
     } catch (e: any) {
       new Notice(`Distill: verify failed — ${e?.message ?? e}`);
+    }
+  }
+
+  /** Fork a local .distill.json into Forked/, verifying its signature first. */
+  async forkMapFile(file: TFile): Promise<void> {
+    try {
+      const json = await this.app.vault.read(file);
+
+      // Same verify path as verifyMapFile: sidecar → parseSidecarSignature → verifyBytes.
+      const base = file.name.replace(/\.distill\.json$/i, "");
+      const sidecarPath = normalizePath(file.path.replace(/[^/]+$/, `${base} — provenance.md`));
+      const sidecar = this.app.vault.getAbstractFileByPath(sidecarPath);
+      let fingerprint: string | null = null;
+      let problem: string | null = null;
+      if (!(sidecar instanceof TFile)) {
+        problem = "no provenance sidecar found next to this map";
+      } else {
+        const sig = parseSidecarSignature(await this.app.vault.read(sidecar));
+        if (!sig) {
+          problem = "the sidecar has no signature block (unsigned map)";
+        } else if (!verifyBytes(json, sig.signature, sig.public_key)) {
+          problem = "the signature is INVALID — the map may have been altered";
+        } else {
+          fingerprint = keyFingerprint(sig.public_key);
+        }
+      }
+
+      const run = async () => {
+        const receipt = await forkMapFileIntoVault(this.app, file.path, json, fingerprint);
+        if (receipt) this.lastForkReceipt = receipt;
+      };
+      if (problem) {
+        new Notice(`Distill: ${problem}.`, 8000);
+        new ConfirmForkModal(this.app, problem, () => { void run(); }).open();
+      } else {
+        await run();
+      }
+    } catch (e: any) {
+      new Notice(`Distill: fork failed — ${e?.message ?? e}`);
     }
   }
 

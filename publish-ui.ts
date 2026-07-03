@@ -7,11 +7,12 @@ import { App, Modal, Notice, Setting, TFile, normalizePath } from "obsidian";
 import {
   Canvas, DistillMapArtifact, PublishMeta, ProvenanceEntry, NodeKind,
   transformCanvas, redactionScan, buildSidecar,
+  checkForkMap, prepareForkImport, buildAttributionNote, buildForkReceipt,
   SOURCE_TYPES, LICENSES, VISIBILITIES, SUMMARY_MIN, SUMMARY_MAX,
-  type Visibility, type License, type SourceType,
+  type Visibility, type License, type SourceType, type ForkLineage,
 } from "./publish-core";
 import { publishArtifact, fetchForkFile } from "./publish-net";
-import { signArtifact, type Signature } from "./publish-sign";
+import { signArtifact, contentHash, type Signature } from "./publish-sign";
 
 export interface PublishContext {
   baseUrl: string;
@@ -35,16 +36,19 @@ export class PublishModal extends Modal {
   private readonly canvas: Canvas;
   private readonly ctx: PublishContext;
   private readonly clientUuid: string;
+  /** Lineage receipt when this canvas is a fork (from its attribution note). */
+  private readonly lineage?: ForkLineage;
 
   private previewEl!: HTMLElement;
   private issuesEl!: HTMLElement;
   private publishBtn!: HTMLButtonElement;
   private exportBtn!: HTMLButtonElement;
 
-  constructor(app: App, canvas: Canvas, defaultTitle: string, ctx: PublishContext) {
+  constructor(app: App, canvas: Canvas, defaultTitle: string, ctx: PublishContext, lineage?: ForkLineage) {
     super(app);
     this.canvas = canvas;
     this.ctx = ctx;
+    this.lineage = lineage;
     this.clientUuid = crypto.randomUUID();
     this.meta = {
       title: defaultTitle,
@@ -149,7 +153,7 @@ export class PublishModal extends Modal {
 
   /** Re-run the transform + redaction and repaint preview + issues + button state. */
   private refresh(): void {
-    const { artifact, warnings, blocking, excluded } = transformCanvas(this.canvas, this.meta, this.clientUuid);
+    const { artifact, warnings, blocking, excluded } = transformCanvas(this.canvas, this.meta, this.clientUuid, this.lineage);
     const redaction = redactionScan(artifact, this.ctx.blockedZones);
 
     this.previewEl.setText(JSON.stringify(artifact, null, 2));
@@ -182,7 +186,7 @@ export class PublishModal extends Modal {
   }
 
   private async doPublish(): Promise<void> {
-    const { artifact } = transformCanvas(this.canvas, this.meta, this.clientUuid);
+    const { artifact } = transformCanvas(this.canvas, this.meta, this.clientUuid, this.lineage);
     const notice = new Notice("Distill: publishing…", 0);
     try {
       const res = await publishArtifact(this.ctx.baseUrl, this.ctx.token, artifact);
@@ -197,7 +201,7 @@ export class PublishModal extends Modal {
 
   /** Write a shareable map file (+ provenance sidecar) into the vault. No account, no network. */
   private async doExport(): Promise<void> {
-    const { artifact } = transformCanvas(this.canvas, this.meta, this.clientUuid);
+    const { artifact } = transformCanvas(this.canvas, this.meta, this.clientUuid, this.lineage);
     const folder = "Distill Exports";
     if (!this.app.vault.getAbstractFileByPath(folder)) {
       try { await this.app.vault.createFolder(folder); } catch { /* race / exists */ }
@@ -231,6 +235,8 @@ export class PublishModal extends Modal {
 
 /* ═══════════════════════════════════════════════════════════════════
    Fork-to-vault — write a public map into Forked/ as a real .canvas.
+   Two callers share one writer: server fetch (importForkedMap) and
+   local file (forkMapFileIntoVault).
    ═══════════════════════════════════════════════════════════════════ */
 
 interface ForkFile {
@@ -245,37 +251,159 @@ function safeName(s: string): string {
   return (s || "map").replace(/[\\/:*?"<>|]/g, "-").slice(0, 80).trim() || "map";
 }
 
+export interface ImportMapOptions {
+  /** Original author: handle (server forks) or signing-key fingerprint (file forks). */
+  author: string;
+  /** What the fork points back to: server map id, or the source map's client_uuid. */
+  forkedFrom: string;
+  /** Server link, or the vault path of the source `.distill.json`. */
+  sourceUrl: string;
+  /** File forks: canonical source artifact JSON, copied into Forked/ for a future diff. */
+  sourceJson?: string;
+  /** File forks: signed lineage receipt, recorded in the attribution note's frontmatter. */
+  lineage?: ForkLineage;
+}
+
+/**
+ * Shared fork writer: hardens the map (checkForkMap), then writes the
+ * .canvas, the attribution note, and (file forks) the source `.distill.json`
+ * copy into Forked/. Throws on blocking issues.
+ */
+export async function importMapPayload(
+  app: App,
+  payload: { title?: string; license?: string; map?: { nodes?: unknown[]; edges?: unknown[] } },
+  opts: ImportMapOptions,
+): Promise<void> {
+  const check = checkForkMap(payload.map);
+  if (check.blocking.length) throw new Error(check.blocking.join(" "));
+
+  const folder = "Forked";
+  if (!app.vault.getAbstractFileByPath(folder)) {
+    try { await app.vault.createFolder(folder); } catch { /* race / exists */ }
+  }
+
+  const title = safeName(payload.title ?? opts.forkedFrom);
+
+  // The map is already JSON Canvas — write the hardened nodes/edges only.
+  const canvasBody = JSON.stringify({ nodes: check.nodes, edges: check.edges }, null, 2);
+  const canvasPath = normalizePath(`${folder}/${title}.canvas`);
+  await writeOrReplace(app, canvasPath, canvasBody);
+
+  // Retain the source artifact alongside the canvas (future diff feature).
+  if (opts.sourceJson !== undefined) {
+    await writeOrReplace(app, normalizePath(`${folder}/${title}.distill.json`), opts.sourceJson);
+  }
+
+  // Companion attribution note (provenance + lineage travel with the fork).
+  const attribution = buildAttributionNote({
+    displayTitle: payload.title ?? title,
+    canvasName: title,
+    forkedFrom: opts.forkedFrom,
+    author: opts.author,
+    license: payload.license ?? "unknown",
+    sourceUrl: opts.sourceUrl,
+    ...(opts.lineage ? { lineage: opts.lineage } : {}),
+  });
+  await writeOrReplace(app, normalizePath(`${folder}/${title} — source.md`), attribution);
+
+  for (const w of check.warnings) new Notice(`⚠️ ${w}`, 8000);
+  new Notice(`✅ Forked "${payload.title ?? title}" into ${folder}/`);
+  const f = app.vault.getAbstractFileByPath(canvasPath);
+  if (f instanceof TFile) app.workspace.getLeaf(true).openFile(f);
+}
+
 export async function importForkedMap(app: App, baseUrl: string, mapId: string): Promise<void> {
   const notice = new Notice("Distill: forking map…", 0);
   try {
     const data = (await fetchForkFile(baseUrl, mapId)) as ForkFile;
-    const title = safeName(data.title ?? mapId);
-
-    const folder = "Forked";
-    if (!app.vault.getAbstractFileByPath(folder)) {
-      try { await app.vault.createFolder(folder); } catch { /* race / exists */ }
-    }
-
-    // The map is already JSON Canvas — write nodes/edges only (drop x-distill).
-    const canvasBody = JSON.stringify({ nodes: data.map?.nodes ?? [], edges: data.map?.edges ?? [] }, null, 2);
-    const canvasPath = normalizePath(`${folder}/${title}.canvas`);
-    await writeOrReplace(app, canvasPath, canvasBody);
-
-    // Companion attribution note (provenance travels with the fork).
     const author = data.author?.handle ?? "unknown";
     const link = `${baseUrl.replace(/\/+$/, "")}/@${author}/${data.id ?? mapId}`;
-    const attribution =
-      `---\nforked_from: ${data.id ?? mapId}\nauthor: ${author}\nlicense: ${data.license ?? "unknown"}\nsource_url: ${link}\n---\n\n` +
-      `# ${data.title ?? title} (forked)\n\nForked from [@${author}](${link}). License: ${data.license ?? "unknown"}.\n\nThe map is in \`${title}.canvas\` in this folder.\n`;
-    await writeOrReplace(app, normalizePath(`${folder}/${title} — source.md`), attribution);
-
+    await importMapPayload(app, data, {
+      author,
+      forkedFrom: data.id ?? mapId,
+      sourceUrl: link,
+    });
     notice.hide();
-    new Notice(`✅ Forked "${data.title ?? title}" into ${folder}/`);
-    const f = app.vault.getAbstractFileByPath(canvasPath);
-    if (f instanceof TFile) app.workspace.getLeaf(true).openFile(f);
   } catch (e: unknown) {
     notice.hide();
     new Notice(`❌ Fork failed: ${e instanceof Error ? e.message : String(e)}`, 8000);
+  }
+}
+
+/**
+ * Fork a local `.distill.json` into the vault — no server involved.
+ * Runs the file-level gate (size/parse/schema strip), derives the lineage
+ * receipt {client_uuid, author_fingerprint, content_hash}, and hands off to
+ * the shared writer. Returns the fork-receipt snippet (for the clipboard
+ * command), or null on failure.
+ */
+export async function forkMapFileIntoVault(
+  app: App,
+  sourcePath: string,
+  json: string,
+  authorFingerprint: string | null,
+): Promise<string | null> {
+  const notice = new Notice("Distill: forking map…", 0);
+  try {
+    const prep = prepareForkImport(json);
+    if (prep.blocking.length || !prep.artifact) throw new Error(prep.blocking.join(" "));
+    const artifact = prep.artifact;
+
+    // Canonical map JSON = the exact bytes of the retained copy; hash those.
+    const canonical = JSON.stringify(artifact, null, 2);
+    const lineage: ForkLineage = {
+      client_uuid: artifact.client_uuid,
+      author_fingerprint: authorFingerprint ?? "unsigned",
+      content_hash: contentHash(canonical),
+    };
+
+    await importMapPayload(app, artifact, {
+      author: lineage.author_fingerprint,
+      forkedFrom: artifact.client_uuid,
+      sourceUrl: sourcePath,
+      sourceJson: canonical,
+      lineage,
+    });
+    notice.hide();
+    new Notice("Fork receipt ready — run “Distill: Copy fork receipt” to share it.");
+    return buildForkReceipt(artifact, lineage);
+  } catch (e: unknown) {
+    notice.hide();
+    new Notice(`❌ Fork failed: ${e instanceof Error ? e.message : String(e)}`, 8000);
+    return null;
+  }
+}
+
+/** Second-confirmation gate for forking a map whose signature didn't verify. */
+export class ConfirmForkModal extends Modal {
+  private readonly problem: string;
+  private readonly onConfirm: () => void;
+
+  constructor(app: App, problem: string, onConfirm: () => void) {
+    super(app);
+    this.problem = problem;
+    this.onConfirm = onConfirm;
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h2", { text: "Fork unverified map?" });
+    contentEl.createEl("p", {
+      cls: "setting-item-description",
+      text: `This map's authorship could not be verified: ${this.problem}. Fork it only if you trust where it came from.`,
+    });
+    new Setting(contentEl)
+      .addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()))
+      .addButton((b) =>
+        b.setWarning().setButtonText("Fork anyway (unverified)").onClick(() => {
+          this.close();
+          this.onConfirm();
+        }));
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
   }
 }
 

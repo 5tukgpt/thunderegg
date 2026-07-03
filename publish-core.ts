@@ -124,6 +124,18 @@ export interface PublishMeta {
   kinds?: Record<string, NodeKind>;
 }
 
+/**
+ * Fork lineage receipt — records what a fork was made FROM, keyed on values
+ * that exist in account-free exports (map_uid is server-authoritative and is
+ * deliberately NOT used). content_hash = sha256 of the canonical map JSON
+ * (the exact bytes of the `.distill.json` copy retained in Forked/).
+ */
+export interface ForkLineage {
+  client_uuid: string;
+  author_fingerprint: string;
+  content_hash: string;
+}
+
 export interface DistillMapArtifact {
   schema: "distill.map/0.2";
   client_uuid: string;
@@ -138,6 +150,8 @@ export interface DistillMapArtifact {
   };
   "x-distill": {
     nodes: Record<string, { kind: NodeKind }>;
+    /** Present when the exported canvas was forked from another map. */
+    forked_from?: ForkLineage;
   };
   provenance: ProvenanceEntry[];
   license: License;
@@ -272,6 +286,7 @@ export function transformCanvas(
   canvas: Canvas,
   meta: PublishMeta,
   clientUuid: string,
+  lineage?: ForkLineage,
 ): TransformResult {
   const warnings: string[] = [];
   const blocking: string[] = [];
@@ -353,7 +368,7 @@ export function transformCanvas(
     topics: meta.topics,
     visibility: meta.visibility,
     map: { format: "jsoncanvas/1.0", nodes, edges },
-    "x-distill": { nodes: kinds },
+    "x-distill": { nodes: kinds, ...(lineage ? { forked_from: lineage } : {}) },
     provenance: meta.provenance.map((p) => ({ ...p, source_key: p.source_key ?? sourceKey(p.url) })),
     license: meta.license,
     distill_version: meta.distill_version,
@@ -556,4 +571,272 @@ export function parseSidecarSignature(md: string): ArtifactSignature | null {
   const signature = field("signature");
   if (!algo || !public_key || !signature) return null;
   return { algo, public_key, signature };
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Fork import (third-party `.distill.json` → vault) — hardening + lineage
+   ═══════════════════════════════════════════════════════════════════ */
+
+export const FORK_MAX_BYTES = 2 * 1024 * 1024;
+export const FORK_MAX_NODES = 500;
+
+/** Keep only the MapNode fields of the artifact schema; null = not a schema text node. */
+function sanitizeMapNode(raw: unknown): MapNode | null {
+  const n = raw as Partial<CanvasNode> | null;
+  if (!n || typeof n !== "object") return null;
+  if (n.type !== "text" || typeof n.id !== "string" || typeof n.text !== "string") return null;
+  if (typeof n.x !== "number" || typeof n.y !== "number" || typeof n.width !== "number" || typeof n.height !== "number") return null;
+  return {
+    id: n.id,
+    type: "text",
+    x: n.x, y: n.y, width: n.width, height: n.height,
+    text: n.text,
+    ...(typeof n.color === "string" ? { color: n.color } : {}),
+  };
+}
+
+/** Keep only the MapEdge fields of the artifact schema; null = malformed. */
+function sanitizeMapEdge(raw: unknown): MapEdge | null {
+  const e = raw as Partial<MapEdge> | null;
+  if (!e || typeof e !== "object") return null;
+  if (typeof e.id !== "string" || typeof e.fromNode !== "string" || typeof e.toNode !== "string") return null;
+  return {
+    id: e.id,
+    fromNode: e.fromNode,
+    toNode: e.toNode,
+    ...(typeof e.fromSide === "string" ? { fromSide: e.fromSide } : {}),
+    ...(typeof e.toSide === "string" ? { toSide: e.toSide } : {}),
+    ...(typeof e.fromEnd === "string" ? { fromEnd: e.fromEnd } : {}),
+    ...(typeof e.toEnd === "string" ? { toEnd: e.toEnd } : {}),
+    ...(typeof e.label === "string" ? { label: e.label } : {}),
+    ...(typeof e.color === "string" ? { color: e.color } : {}),
+  };
+}
+
+export interface ForkMapCheck {
+  /** Canvas-ready nodes (schema fields only; over-cap nodes rejected). */
+  nodes: MapNode[];
+  /** Canvas-ready edges (schema fields only; dangling edges dropped). */
+  edges: MapEdge[];
+  warnings: string[];
+  blocking: string[];
+}
+
+/**
+ * Harden a third-party map before it is written into the vault: node-count
+ * cap, the spec's per-node text cap (over-cap nodes are REJECTED with a
+ * warning listing them — never truncated), and unknown-field stripping.
+ */
+export function checkForkMap(map: { nodes?: unknown[]; edges?: unknown[] } | undefined): ForkMapCheck {
+  const warnings: string[] = [];
+  const blocking: string[] = [];
+
+  const rawNodes = map?.nodes ?? [];
+  if (rawNodes.length > FORK_MAX_NODES) {
+    blocking.push(`Map has ${rawNodes.length} nodes (max ${FORK_MAX_NODES}) — refusing to import.`);
+    return { nodes: [], edges: [], warnings, blocking };
+  }
+
+  const nodes: MapNode[] = [];
+  const overCap: string[] = [];
+  let skipped = 0;
+  for (const raw of rawNodes) {
+    const n = sanitizeMapNode(raw);
+    if (!n) { skipped++; continue; }
+    if (n.text.length > NODE_TEXT_CAP) {
+      overCap.push(`"${firstLine(n.text).slice(0, 40)}…" (${n.text.length} chars)`);
+      continue;
+    }
+    nodes.push(n);
+  }
+  if (skipped) warnings.push(`Skipped ${skipped} node(s) that are not schema text nodes.`);
+  if (overCap.length) {
+    warnings.push(`Rejected ${overCap.length} node(s) over the ${NODE_TEXT_CAP}-char cap: ${overCap.join(", ")}. The rest were imported.`);
+  }
+  if (nodes.length === 0) blocking.push("This map has no importable text nodes.");
+
+  const includedIds = new Set(nodes.map((n) => n.id));
+  const edges: MapEdge[] = [];
+  let dropped = 0;
+  for (const raw of map?.edges ?? []) {
+    const e = sanitizeMapEdge(raw);
+    if (!e || !includedIds.has(e.fromNode) || !includedIds.has(e.toNode)) { dropped++; continue; }
+    edges.push(e);
+  }
+  if (dropped) warnings.push(`Dropped ${dropped} edge(s) that were malformed or connected to a rejected node.`);
+
+  return { nodes, edges, warnings, blocking };
+}
+
+/**
+ * Rebuild a parsed `.distill.json` keeping ONLY the fields of the known
+ * artifact schema (unknown fields at every level are stripped). Value
+ * constraints (e.g. the node-text cap) are enforced by checkForkMap, not
+ * here — the sanitized artifact is the fork's retained source copy.
+ * Returns null when the input has no map object to speak of.
+ */
+export function sanitizeForkArtifact(raw: unknown): DistillMapArtifact | null {
+  const a = raw as Record<string, unknown> | null;
+  if (!a || typeof a !== "object") return null;
+  const map = a.map as Record<string, unknown> | null | undefined;
+  if (!map || typeof map !== "object") return null;
+  const str = (v: unknown): string => (typeof v === "string" ? v : "");
+
+  const nodes: MapNode[] = [];
+  for (const n of Array.isArray(map.nodes) ? map.nodes : []) {
+    const s = sanitizeMapNode(n);
+    if (s) nodes.push(s);
+  }
+  const includedIds = new Set(nodes.map((n) => n.id));
+  const edges: MapEdge[] = [];
+  for (const e of Array.isArray(map.edges) ? map.edges : []) {
+    const s = sanitizeMapEdge(e);
+    if (s && includedIds.has(s.fromNode) && includedIds.has(s.toNode)) edges.push(s);
+  }
+
+  const xd = a["x-distill"] as Record<string, unknown> | undefined;
+  const kinds: Record<string, { kind: NodeKind }> = {};
+  const rawKinds = (xd && typeof xd === "object" ? xd.nodes ?? {} : {}) as Record<string, { kind?: unknown }>;
+  for (const id of Object.keys(rawKinds)) {
+    const k = rawKinds[id]?.kind;
+    if (includedIds.has(id) && (k === "concept" || k === "source" || k === "question" || k === "claim")) {
+      kinds[id] = { kind: k };
+    }
+  }
+  const fl = (xd && typeof xd === "object" ? xd.forked_from : undefined) as Record<string, unknown> | undefined;
+  const forked_from: ForkLineage | undefined =
+    fl && typeof fl === "object" &&
+    typeof fl.client_uuid === "string" && typeof fl.author_fingerprint === "string" && typeof fl.content_hash === "string"
+      ? { client_uuid: fl.client_uuid, author_fingerprint: fl.author_fingerprint, content_hash: fl.content_hash }
+      : undefined;
+
+  const provenance: ProvenanceEntry[] = [];
+  for (const raw2 of Array.isArray(a.provenance) ? a.provenance : []) {
+    const p = raw2 as Record<string, unknown> | null;
+    if (!p || typeof p !== "object") continue;
+    provenance.push({
+      source_title: str(p.source_title),
+      url: str(p.url),
+      source_type: str(p.source_type) as SourceType,
+      license: str(p.license) as License,
+      ...(typeof p.accessed === "string" ? { accessed: p.accessed } : {}),
+      ...(typeof p.source_key === "string" ? { source_key: p.source_key } : {}),
+    });
+  }
+
+  return {
+    schema: "distill.map/0.2",
+    client_uuid: str(a.client_uuid),
+    title: str(a.title),
+    summary: str(a.summary),
+    topics: Array.isArray(a.topics) ? a.topics.filter((t): t is string => typeof t === "string") : [],
+    visibility: (VISIBILITIES as readonly string[]).includes(str(a.visibility)) ? (a.visibility as Visibility) : "private",
+    map: { format: "jsoncanvas/1.0", nodes, edges },
+    "x-distill": { nodes: kinds, ...(forked_from ? { forked_from } : {}) },
+    provenance,
+    license: (str(a.license) || "unknown") as License,
+    distill_version: str(a.distill_version),
+  };
+}
+
+export interface ForkImportPrep {
+  /** Sanitized source artifact (known schema fields only) — null when blocked. */
+  artifact: DistillMapArtifact | null;
+  blocking: string[];
+}
+
+/** File-level gate for a fork import: size cap, JSON parse, schema strip. */
+export function prepareForkImport(json: string): ForkImportPrep {
+  const bytes = new TextEncoder().encode(json).length;
+  if (bytes > FORK_MAX_BYTES) {
+    return { artifact: null, blocking: [`File is ${bytes} bytes (max ${FORK_MAX_BYTES}) — refusing to import.`] };
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(json);
+  } catch {
+    return { artifact: null, blocking: ["File is not valid JSON."] };
+  }
+  const artifact = sanitizeForkArtifact(raw);
+  if (!artifact) return { artifact: null, blocking: ["File is not a distill map artifact (no map object)."] };
+  return { artifact, blocking: [] };
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Fork attribution note + lineage receipt (pure builders/parsers)
+   ═══════════════════════════════════════════════════════════════════ */
+
+export interface ForkAttribution {
+  /** Original (display) title, used in the heading. */
+  displayTitle: string;
+  /** Safe file base — the fork lives in `<canvasName>.canvas`. */
+  canvasName: string;
+  /** What the fork points back to: server map id, or the source map's client_uuid. */
+  forkedFrom: string;
+  /** Original author: handle (server forks) or signing-key fingerprint (file forks). */
+  author: string;
+  license: string;
+  /** Server link, or the vault path of the source `.distill.json`. */
+  sourceUrl: string;
+  /** File forks: signed lineage receipt, recorded in the frontmatter. */
+  lineage?: ForkLineage;
+}
+
+/** The companion attribution note written next to every forked canvas. */
+export function buildAttributionNote(a: ForkAttribution): string {
+  const lines: string[] = [
+    "---",
+    `forked_from: ${a.forkedFrom}`,
+    `author: ${a.author}`,
+    `license: ${a.license}`,
+    `source_url: ${a.sourceUrl}`,
+  ];
+  if (a.lineage) {
+    lines.push(
+      `lineage_client_uuid: ${a.lineage.client_uuid}`,
+      `lineage_author_fingerprint: ${a.lineage.author_fingerprint}`,
+      `lineage_content_hash: ${a.lineage.content_hash}`,
+    );
+  }
+  lines.push(
+    "---",
+    "",
+    `# ${a.displayTitle} (forked)`,
+    "",
+    `Forked from [@${a.author}](${a.sourceUrl}). License: ${a.license}.`,
+    "",
+    `The map is in \`${a.canvasName}.canvas\` in this folder.`,
+    "",
+  );
+  return lines.join("\n");
+}
+
+/** Parse the lineage receipt out of a fork's attribution-note frontmatter. */
+export function parseLineageFrontmatter(md: string): ForkLineage | null {
+  const field = (name: string): string | null => {
+    const m = md.match(new RegExp(`^${name}:[ \\t]*(.+)$`, "m"));
+    return m ? m[1].trim() : null;
+  };
+  const client_uuid = field("lineage_client_uuid");
+  const author_fingerprint = field("lineage_author_fingerprint");
+  const content_hash = field("lineage_content_hash");
+  if (!client_uuid || !author_fingerprint || !content_hash) return null;
+  return { client_uuid, author_fingerprint, content_hash };
+}
+
+/**
+ * Short markdown snippet for zero-telemetry self-report of a fork (Discord/
+ * forums): title, author fingerprint, source_key(s), content_hash prefix.
+ */
+export function buildForkReceipt(artifact: DistillMapArtifact, lineage: ForkLineage): string {
+  const sources = artifact.provenance
+    .map((p) => p.source_key ?? sourceKey(p.url))
+    .filter((s) => s && s !== "web:");
+  const lines: string[] = [
+    `Forked "${artifact.title}" via Distill`,
+    `- author: \`${lineage.author_fingerprint}\``,
+    `- content: \`${lineage.content_hash.slice(0, 12)}…\``,
+  ];
+  if (sources.length) lines.push(`- sources: ${sources.map((s) => `\`${s}\``).join(", ")}`);
+  return lines.join("\n");
 }

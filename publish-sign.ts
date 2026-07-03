@@ -60,6 +60,11 @@ export function keyFingerprint(publicKeySpkiB64: string): string {
   return createHash("sha256").update(publicKeySpkiB64).digest("hex").slice(0, 16);
 }
 
+/** sha256 hex over UTF-8 content — the fork-lineage content hash. */
+export function contentHash(data: string): string {
+  return createHash("sha256").update(data, "utf8").digest("hex");
+}
+
 /* ── Device key storage (fs; not unit-tested) ────────────────────────── */
 
 /** Load the device signing key, generating + persisting it (chmod 600) on first use. */
