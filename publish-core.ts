@@ -572,7 +572,7 @@ export function buildSidecar(artifact: DistillMapArtifact, signature?: ArtifactS
   }
   lines.push(
     "",
-    "_Exported from Distill. The concept map is in the companion `.distill.json` (distill.map/0.2). Share both together._",
+    "_Exported from Thunderegg. The concept map is in the companion `.distill.json` (distill.map/0.2). Share both together._",
   );
   if (signature) {
     lines.push(
@@ -859,7 +859,7 @@ export function buildForkReceipt(artifact: DistillMapArtifact, lineage: ForkLine
     .map((p) => p.source_key ?? sourceKey(p.url))
     .filter((s) => s && s !== "web:");
   const lines: string[] = [
-    `Forked "${artifact.title}" via Distill`,
+    `Forked "${artifact.title}" via Thunderegg`,
     `- author: \`${lineage.author_fingerprint}\``,
     `- content: \`${lineage.content_hash.slice(0, 12)}…\``,
   ];

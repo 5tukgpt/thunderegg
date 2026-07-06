@@ -1,20 +1,20 @@
-# Distill Bridge — Obsidian Plugin
+# Thunderegg — Obsidian Plugin
 
 Convert any attachment in your vault — PDF, Word, Excel, PowerPoint, email, image — to clean Markdown **with YAML frontmatter**, 100% on your Mac. Plus the **Refinery**: track note maturity, discover connections, and surface hub notes automatically.
 
 ## Features
 
 ### Conversion (free)
-- **File menu:** right-click a file → *Convert to Markdown (Distill)*
-- **Folder menu:** right-click a folder → *Distill: convert all attachments* (recursive)
+- **File menu:** right-click a file → *Convert to Markdown (Thunderegg)*
+- **Folder menu:** right-click a folder → *Thunderegg: convert all attachments* (recursive)
 - **Command palette:**
-  - `Distill: Convert file` — convert the active attachment
-  - `Distill: Convert clipboard` — paste clipboard content (HTML or text), run it through Distill, and create a new note
-- **Status bar:** live indicator showing whether the Distill engine is available (🟢 Ready / 🔴 Unavailable)
+  - `Thunderegg: Convert file` — convert the active attachment
+  - `Thunderegg: Convert clipboard` — paste clipboard content (HTML or text), run it through Thunderegg, and create a new note
+- **Status bar:** live indicator showing whether the Thunderegg engine is available (🟢 Ready / 🔴 Unavailable)
 - Output is written as `<file>.md` next to the source, with `title/source/type/created/tags` frontmatter.
 
 ### Refinery (premium)
-Enable the Refinery in settings to unlock Distill's knowledge-management layer. It adds four concepts:
+Enable the Refinery in settings to unlock Thunderegg's knowledge-management layer. It adds four concepts:
 
 | Concept       | What it is                                             |
 |---------------|--------------------------------------------------------|
@@ -38,8 +38,8 @@ grade: vapor
 Valid values: `vapor`, `distillate`, `essence`. The plugin reads Obsidian's metadata cache for instant display.
 
 ## Requirements
-- **macOS** (desktop-only — uses the on-device Distill engine).
-- The **Distill app** (or its helper scripts) installed, which provides
+- **macOS** (desktop-only — uses the on-device Thunderegg engine).
+- The **Thunderegg app** (or its helper scripts) installed, which provides
   `~/Library/Application Support/MarkItDownDroplet/convert.sh`. The engine path is
   configurable in plugin settings.
 - Image OCR needs Xcode Command Line Tools (`xcode-select --install`).
@@ -48,7 +48,7 @@ Valid values: `vapor`, `distillate`, `essence`. The plugin reads Obsidian's meta
 
 | Setting                | Description                                              |
 |------------------------|----------------------------------------------------------|
-| Engine path            | Full path to the Distill `convert.sh` script             |
+| Engine path            | Full path to the Thunderegg `convert.sh` script          |
 | Add YAML frontmatter   | Prepend title/source/type/tags to converted notes        |
 | Open after converting  | Auto-open the resulting .md in a new pane                |
 | Enable Refinery        | Turn on Grade badges, Bond counts, and Condenser links   |
@@ -59,7 +59,7 @@ Valid values: `vapor`, `distillate`, `essence`. The plugin reads Obsidian's meta
 | Show condenser links   | Toggle Condenser back-link display                       |
 
 ## How it works
-The plugin shells out to the local Distill engine via Node's `child_process`
+The plugin shells out to the local Thunderegg engine via Node's `child_process`
 (allowed for desktop-only plugins). Nothing is uploaded — conversion is entirely
 on-device. Frontmatter can be toggled off in settings (passes `DISTILL_FRONTMATTER=0`).
 
@@ -74,9 +74,9 @@ npm run build      # produces main.js
 ## Install into a vault (manual / dev)
 Copy `manifest.json`, `main.js`, and `styles.css` into:
 ```
-<your-vault>/.obsidian/plugins/distill-bridge/
+<your-vault>/.obsidian/plugins/thunderegg/
 ```
-Then enable **Distill** in Settings → Community plugins.
+Then enable **Thunderegg** in Settings → Community plugins.
 
 ## Submitting to the community catalog
 1. Push this folder to a public GitHub repo.

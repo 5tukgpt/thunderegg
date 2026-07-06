@@ -12,7 +12,7 @@ import * as path from "path";
 import * as fs from "fs";
 import type { DistillMapArtifact } from "./publish-core";
 
-/** App-support dir the Distill engine already uses; token lives here, chmod 600. */
+/** App-support dir the Thunderegg engine already uses; token lives here, chmod 600. */
 const TOKEN_DIR = path.join(os.homedir(), "Library", "Application Support", "MarkItDownDroplet");
 const TOKEN_FILE = path.join(TOKEN_DIR, "distill-token");
 

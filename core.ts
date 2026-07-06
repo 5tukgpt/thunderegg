@@ -5,7 +5,7 @@
 
 /* ── Conversion ───────────────────────────────────────────────────── */
 
-/** File extensions the Distill engine can convert. */
+/** File extensions the Thunderegg engine can convert. */
 export const CONVERTIBLE = new Set([
   "pdf", "docx", "xlsx", "xls", "pptx", "html", "htm", "csv", "json",
   "eml", "msg", "png", "jpg", "jpeg", "tiff", "tif", "heic", "gif", "bmp", "webp",

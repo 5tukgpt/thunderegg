@@ -163,7 +163,7 @@ describe("buildAttributionNote / parseLineageFrontmatter", () => {
       forkedFrom: "uuid-src",
       author: lineage.author_fingerprint,
       license: "CC-BY-4.0",
-      sourceUrl: "Distill Exports/Forked Map.distill.json",
+      sourceUrl: "Thunderegg Exports/Forked Map.distill.json",
       lineage,
     });
     expect(md).toContain("forked_from: uuid-src");

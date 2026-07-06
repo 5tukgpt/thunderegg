@@ -30,7 +30,7 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // main.ts
 var main_exports = {};
 __export(main_exports, {
-  default: () => DistillBridgePlugin
+  default: () => ThundereggPlugin
 });
 module.exports = __toCommonJS(main_exports);
 var import_obsidian3 = require("obsidian");
@@ -433,7 +433,7 @@ function buildSidecar(artifact, signature) {
   }
   lines.push(
     "",
-    "_Exported from Distill. The concept map is in the companion `.distill.json` (distill.map/0.2). Share both together._"
+    "_Exported from Thunderegg. The concept map is in the companion `.distill.json` (distill.map/0.2). Share both together._"
   );
   if (signature) {
     lines.push(
@@ -659,7 +659,7 @@ function parseLineageFrontmatter(md) {
 function buildForkReceipt(artifact, lineage) {
   const sources = artifact.provenance.map((p) => p.source_key ?? sourceKey(p.url)).filter((s) => s && s !== "web:");
   const lines = [
-    `Forked "${artifact.title}" via Distill`,
+    `Forked "${artifact.title}" via Thunderegg`,
     `- author: \`${lineage.author_fingerprint}\``,
     `- content: \`${lineage.content_hash.slice(0, 12)}\u2026\``
   ];
@@ -870,7 +870,7 @@ var PublishModal = class extends import_obsidian2.Modal {
     const renderProv = () => {
       provWrap.empty();
       this.meta.provenance.forEach((p, i) => {
-        const row = provWrap.createDiv({ cls: "distill-prov-row" });
+        const row = provWrap.createDiv({ cls: "thunderegg-prov-row" });
         new import_obsidian2.Setting(row).setName(`Source #${i + 1}`).addText((t) => t.setPlaceholder("Title").setValue(p.source_title).onChange((v) => {
           p.source_title = v;
           this.refresh();
@@ -905,8 +905,8 @@ var PublishModal = class extends import_obsidian2.Modal {
       this.refresh();
     }));
     contentEl.createEl("h3", { text: "Review" });
-    this.issuesEl = contentEl.createDiv({ cls: "distill-publish-issues" });
-    this.previewEl = contentEl.createEl("pre", { cls: "distill-publish-preview" });
+    this.issuesEl = contentEl.createDiv({ cls: "thunderegg-publish-issues" });
+    this.previewEl = contentEl.createEl("pre", { cls: "thunderegg-publish-preview" });
     this.previewEl.style.maxHeight = "240px";
     this.previewEl.style.overflow = "auto";
     const btns = new import_obsidian2.Setting(contentEl);
@@ -933,11 +933,11 @@ var PublishModal = class extends import_obsidian2.Modal {
     const blocks = [...blocking, ...redaction.blocks];
     const warns = [...warnings, ...redaction.warnings, ...excluded.filter((e) => e.type !== "group").map((e) => `Excluded ${e.type} node (${e.reason}).`)];
     if (blocks.length) {
-      const ul = this.issuesEl.createEl("ul", { cls: "distill-publish-blocks" });
+      const ul = this.issuesEl.createEl("ul", { cls: "thunderegg-publish-blocks" });
       blocks.forEach((b) => ul.createEl("li", { text: `\u26D4 ${b}` }));
     }
     if (warns.length) {
-      const ul = this.issuesEl.createEl("ul", { cls: "distill-publish-warnings" });
+      const ul = this.issuesEl.createEl("ul", { cls: "thunderegg-publish-warnings" });
       warns.forEach((w) => ul.createEl("li", { text: `\u26A0\uFE0F ${w}` }));
     }
     if (!blocks.length && !warns.length) {
@@ -945,13 +945,13 @@ var PublishModal = class extends import_obsidian2.Modal {
     }
     const ready = blocks.length === 0 && this.ctx.token.length > 0;
     this.publishBtn.disabled = !ready;
-    this.publishBtn.title = this.ctx.token ? blocks.length ? "Resolve the blocking issues above." : "" : "Connect a device token in Settings \u2192 Distill first.";
+    this.publishBtn.title = this.ctx.token ? blocks.length ? "Resolve the blocking issues above." : "" : "Connect a device token in Settings \u2192 Thunderegg first.";
     this.exportBtn.disabled = blocks.length > 0;
     this.exportBtn.title = blocks.length ? "Resolve the blocking issues above." : "Write a shareable map file into your vault \u2014 no account needed.";
   }
   async doPublish() {
     const { artifact } = transformCanvas(this.canvas, this.meta, this.clientUuid, this.lineage);
-    const notice = new import_obsidian2.Notice("Distill: publishing\u2026", 0);
+    const notice = new import_obsidian2.Notice("Thunderegg: publishing\u2026", 0);
     try {
       const res = await publishArtifact(this.ctx.baseUrl, this.ctx.token, artifact);
       notice.hide();
@@ -965,7 +965,7 @@ var PublishModal = class extends import_obsidian2.Modal {
   /** Write a shareable map file (+ provenance sidecar) into the vault. No account, no network. */
   async doExport() {
     const { artifact } = transformCanvas(this.canvas, this.meta, this.clientUuid, this.lineage);
-    const folder = "Distill Exports";
+    const folder = "Thunderegg Exports";
     if (!this.app.vault.getAbstractFileByPath(folder)) {
       try {
         await this.app.vault.createFolder(folder);
@@ -978,7 +978,7 @@ var PublishModal = class extends import_obsidian2.Modal {
     try {
       signature = signArtifact(json);
     } catch (e) {
-      console.error("[Distill] signing failed; exporting unsigned", e);
+      console.error("[Thunderegg] signing failed; exporting unsigned", e);
     }
     try {
       await writeOrReplace(this.app, (0, import_obsidian2.normalizePath)(`${folder}/${base}.distill.json`), json);
@@ -1032,7 +1032,7 @@ async function importMapPayload(app, payload, opts) {
     app.workspace.getLeaf(true).openFile(f);
 }
 async function importForkedMap(app, baseUrl, mapId) {
-  const notice = new import_obsidian2.Notice("Distill: forking map\u2026", 0);
+  const notice = new import_obsidian2.Notice("Thunderegg: forking map\u2026", 0);
   try {
     const data = await fetchForkFile(baseUrl, mapId);
     const author = data.author?.handle ?? "unknown";
@@ -1049,7 +1049,7 @@ async function importForkedMap(app, baseUrl, mapId) {
   }
 }
 async function forkMapFileIntoVault(app, sourcePath, json, authorFingerprint) {
-  const notice = new import_obsidian2.Notice("Distill: forking map\u2026", 0);
+  const notice = new import_obsidian2.Notice("Thunderegg: forking map\u2026", 0);
   try {
     const prep = prepareForkImport(json);
     if (prep.blocking.length || !prep.artifact)
@@ -1069,7 +1069,7 @@ async function forkMapFileIntoVault(app, sourcePath, json, authorFingerprint) {
       lineage
     });
     notice.hide();
-    new import_obsidian2.Notice("Fork receipt ready \u2014 run \u201CDistill: Copy fork receipt\u201D to share it.");
+    new import_obsidian2.Notice("Fork receipt ready \u2014 run \u201CThunderegg: Copy fork receipt\u201D to share it.");
     return buildForkReceipt(artifact, lineage);
   } catch (e) {
     notice.hide();
@@ -1126,49 +1126,49 @@ var DEFAULT_SETTINGS = {
   defaultVisibility: "private",
   defaultLicense: "user-generated"
 };
-var DistillBridgePlugin = class extends import_obsidian3.Plugin {
+var ThundereggPlugin = class extends import_obsidian3.Plugin {
   constructor() {
     super(...arguments);
     this.refineryBarEl = null;
     /* State */
-    this.distillAvailable = false;
+    this.thundereggAvailable = false;
     this.bonds = emptyBondGraph();
     this.lastForkReceipt = null;
   }
   /* ── Lifecycle ──────────────────────────────────────────────── */
   async onload() {
     await this.loadSettings();
-    this.addSettingTab(new DistillBridgeSettingTab(this.app, this));
-    this.statusDistill = this.addStatusBarItem();
+    this.addSettingTab(new ThundereggSettingTab(this.app, this));
+    this.statusThunderegg = this.addStatusBarItem();
     this.statusRefinery = this.addStatusBarItem();
-    await this.checkDistillAvailable();
-    this.renderDistillStatus();
+    await this.checkThundereggAvailable();
+    this.renderThundereggStatus();
     this.registerEvent(
       this.app.workspace.on("file-menu", (menu, file) => {
         if (file instanceof import_obsidian3.TFile && CONVERTIBLE.has(file.extension.toLowerCase())) {
           menu.addItem(
-            (item) => item.setTitle("Convert to Markdown (Distill)").setIcon("file-down").onClick(() => this.convertFile(file))
+            (item) => item.setTitle("Convert to Markdown (Thunderegg)").setIcon("file-down").onClick(() => this.convertFile(file))
           );
         } else if (file instanceof import_obsidian3.TFile && file.extension.toLowerCase() === "canvas") {
           menu.addItem(
-            (item) => item.setTitle("Publish concept map (Distill)").setIcon("upload").onClick(() => this.openPublishModal(file))
+            (item) => item.setTitle("Publish concept map (Thunderegg)").setIcon("upload").onClick(() => this.openPublishModal(file))
           );
         } else if (file instanceof import_obsidian3.TFile && file.name.toLowerCase().endsWith(".distill.json")) {
           menu.addItem(
-            (item) => item.setTitle("Verify signature (Distill)").setIcon("shield-check").onClick(() => this.verifyMapFile(file))
+            (item) => item.setTitle("Verify signature (Thunderegg)").setIcon("shield-check").onClick(() => this.verifyMapFile(file))
           );
           menu.addItem(
-            (item) => item.setTitle("Fork map file into vault (Distill)").setIcon("git-fork").onClick(() => this.forkMapFile(file))
+            (item) => item.setTitle("Fork map file into vault (Thunderegg)").setIcon("git-fork").onClick(() => this.forkMapFile(file))
           );
         } else if (file instanceof import_obsidian3.TFolder) {
           menu.addItem(
-            (item) => item.setTitle("Distill: convert all attachments").setIcon("folder-down").onClick(() => this.convertFolder(file))
+            (item) => item.setTitle("Thunderegg: convert all attachments").setIcon("folder-down").onClick(() => this.convertFolder(file))
           );
         }
       })
     );
     this.addCommand({
-      id: "distill-convert-file",
+      id: "thunderegg-convert-file",
       name: "Convert file",
       checkCallback: (checking) => {
         const f = this.app.workspace.getActiveFile();
@@ -1179,12 +1179,12 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
       }
     });
     this.addCommand({
-      id: "distill-convert-clipboard",
+      id: "thunderegg-convert-clipboard",
       name: "Convert clipboard",
       callback: () => this.convertClipboard()
     });
     this.addCommand({
-      id: "distill-publish-canvas",
+      id: "thunderegg-publish-canvas",
       name: "Publish concept map",
       checkCallback: (checking) => {
         const f = this.app.workspace.getActiveFile();
@@ -1195,7 +1195,7 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
       }
     });
     this.addCommand({
-      id: "distill-verify-map",
+      id: "thunderegg-verify-map",
       name: "Verify concept-map signature",
       checkCallback: (checking) => {
         const f = this.app.workspace.getActiveFile();
@@ -1206,7 +1206,7 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
       }
     });
     this.addCommand({
-      id: "distill-fork-map-file",
+      id: "thunderegg-fork-map-file",
       name: "Fork map file into vault",
       checkCallback: (checking) => {
         const f = this.app.workspace.getActiveFile();
@@ -1217,13 +1217,13 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
       }
     });
     this.addCommand({
-      id: "distill-copy-fork-receipt",
+      id: "thunderegg-copy-fork-receipt",
       name: "Copy fork receipt",
       checkCallback: (checking) => {
         const ok = this.lastForkReceipt !== null;
         if (ok && !checking) {
           navigator.clipboard.writeText(this.lastForkReceipt);
-          new import_obsidian3.Notice("Distill: fork receipt copied \u2014 paste it wherever you self-report.");
+          new import_obsidian3.Notice("Thunderegg: fork receipt copied \u2014 paste it wherever you self-report.");
         }
         return ok;
       }
@@ -1231,7 +1231,7 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
     this.registerObsidianProtocolHandler("distill-fork", (params) => {
       const mapId = params.map;
       if (!mapId) {
-        new import_obsidian3.Notice("Distill: fork link is missing ?map=\u2026");
+        new import_obsidian3.Notice("Thunderegg: fork link is missing ?map=\u2026");
         return;
       }
       importForkedMap(this.app, this.settings.serverBaseUrl, mapId);
@@ -1256,7 +1256,7 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
     );
     this.registerInterval(
       window.setInterval(() => {
-        this.checkDistillAvailable().then(() => this.renderDistillStatus());
+        this.checkThundereggAvailable().then(() => this.renderThundereggStatus());
       }, 6e4)
     );
   }
@@ -1264,28 +1264,28 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
     this.stripRefineryBar();
   }
   /* ═════════════════════════════════════════════════════════════════
-     Distill availability
+     Thunderegg availability
      ═════════════════════════════════════════════════════════════════ */
-  async checkDistillAvailable() {
+  async checkThundereggAvailable() {
     try {
       await fs3.promises.access(this.settings.enginePath, fs3.constants.X_OK);
-      this.distillAvailable = true;
+      this.thundereggAvailable = true;
     } catch {
-      this.distillAvailable = false;
+      this.thundereggAvailable = false;
     }
   }
-  renderDistillStatus() {
-    this.statusDistill.empty();
-    const dot = this.distillAvailable ? "\u{1F7E2}" : "\u{1F534}";
-    const label = this.distillAvailable ? "Ready" : "Unavailable";
-    this.statusDistill.createSpan({
-      cls: "distill-status",
+  renderThundereggStatus() {
+    this.statusThunderegg.empty();
+    const dot = this.thundereggAvailable ? "\u{1F7E2}" : "\u{1F534}";
+    const label = this.thundereggAvailable ? "Ready" : "Unavailable";
+    this.statusThunderegg.createSpan({
+      cls: "thunderegg-status",
       text: `\u2697\uFE0F ${label} ${dot}`
       // ⚗️
     });
-    this.statusDistill.setAttribute(
+    this.statusThunderegg.setAttribute(
       "aria-label",
-      this.distillAvailable ? `Distill engine: ${this.settings.enginePath}` : "Distill engine not found \u2014 check Settings \u2192 Distill"
+      this.thundereggAvailable ? `Thunderegg engine: ${this.settings.enginePath}` : "Thunderegg engine not found \u2014 check Settings \u2192 Thunderegg"
     );
   }
   /* ═════════════════════════════════════════════════════════════════
@@ -1303,14 +1303,14 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
   async convertFile(file) {
     const engine = this.settings.enginePath;
     const full = this.absPath(file);
-    const notice = new import_obsidian3.Notice(`Distill: converting ${file.name}\u2026`, 0);
+    const notice = new import_obsidian3.Notice(`Thunderegg: converting ${file.name}\u2026`, 0);
     try {
       const env = { ...process.env };
       if (!this.settings.frontmatter)
         env["DISTILL_FRONTMATTER"] = "0";
       await execAsync(`${this.shellQuote(engine)} ${this.shellQuote(full)}`, { env });
       notice.hide();
-      new import_obsidian3.Notice(`\u2705 Distill: created ${file.name}.md`);
+      new import_obsidian3.Notice(`\u2705 Thunderegg: created ${file.name}.md`);
       if (this.settings.openAfter) {
         const mdPath = (0, import_obsidian3.normalizePath)(`${file.path}.md`);
         await sleep(300);
@@ -1321,10 +1321,10 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
     } catch (e) {
       notice.hide();
       new import_obsidian3.Notice(
-        `\u274C Distill failed: ${e?.message ?? e}. Is the Distill app installed?`,
+        `\u274C Thunderegg failed: ${e?.message ?? e}. Is the Thunderegg app installed?`,
         8e3
       );
-      console.error("[Distill]", e);
+      console.error("[Thunderegg]", e);
     }
   }
   async convertFolder(folder) {
@@ -1338,10 +1338,10 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
     };
     walk(folder);
     if (targets.length === 0) {
-      new import_obsidian3.Notice("Distill: no convertible files here.");
+      new import_obsidian3.Notice("Thunderegg: no convertible files here.");
       return;
     }
-    const notice = new import_obsidian3.Notice(`Distill: converting ${targets.length} files\u2026`, 0);
+    const notice = new import_obsidian3.Notice(`Thunderegg: converting ${targets.length} files\u2026`, 0);
     let ok = 0;
     for (const t of targets) {
       try {
@@ -1354,11 +1354,11 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
         );
         ok++;
       } catch (e) {
-        console.error("[Distill]", t.path, e);
+        console.error("[Thunderegg]", t.path, e);
       }
     }
     notice.hide();
-    new import_obsidian3.Notice(`\u2705 Distill: converted ${ok}/${targets.length} files.`);
+    new import_obsidian3.Notice(`\u2705 Thunderegg: converted ${ok}/${targets.length} files.`);
   }
   /* ═════════════════════════════════════════════════════════════════
      Clipboard conversion
@@ -1388,9 +1388,9 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
     }
     const ext = clipHtml.trim() ? "html" : "txt";
     const stamp = Date.now();
-    const tempName = `_distill_clip_${stamp}.${ext}`;
+    const tempName = `_thunderegg_clip_${stamp}.${ext}`;
     const tempPath = (0, import_obsidian3.normalizePath)(tempName);
-    const notice = new import_obsidian3.Notice("Distill: converting clipboard\u2026", 0);
+    const notice = new import_obsidian3.Notice("Thunderegg: converting clipboard\u2026", 0);
     try {
       await this.app.vault.create(tempPath, content);
       const tempFile = this.app.vault.getAbstractFileByPath(tempPath);
@@ -1413,7 +1413,7 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
         const niceName = `Clipboard ${dateStr}.md`;
         const nicePath = (0, import_obsidian3.normalizePath)(niceName);
         await this.app.fileManager.renameFile(mdFile, nicePath);
-        new import_obsidian3.Notice(`\u2705 Distill: created ${niceName}`);
+        new import_obsidian3.Notice(`\u2705 Thunderegg: created ${niceName}`);
         if (this.settings.openAfter) {
           const renamed = this.app.vault.getAbstractFileByPath(nicePath);
           if (renamed instanceof import_obsidian3.TFile) {
@@ -1432,7 +1432,7 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
       } catch {
       }
       new import_obsidian3.Notice(`\u274C Clipboard conversion failed: ${e?.message ?? e}`, 8e3);
-      console.error("[Distill]", e);
+      console.error("[Thunderegg]", e);
     }
   }
   /* ═════════════════════════════════════════════════════════════════
@@ -1444,7 +1444,7 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
     try {
       canvas = JSON.parse(await this.app.vault.read(file));
     } catch (e) {
-      new import_obsidian3.Notice(`Distill: could not read canvas \u2014 ${e?.message ?? e}`);
+      new import_obsidian3.Notice(`Thunderegg: could not read canvas \u2014 ${e?.message ?? e}`);
       return;
     }
     const ctx = {
@@ -1471,12 +1471,12 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
       const sidecarPath = (0, import_obsidian3.normalizePath)(file.path.replace(/[^/]+$/, `${base} \u2014 provenance.md`));
       const sidecar = this.app.vault.getAbstractFileByPath(sidecarPath);
       if (!(sidecar instanceof import_obsidian3.TFile)) {
-        new import_obsidian3.Notice("Distill: no provenance sidecar found next to this map \u2014 can't verify.");
+        new import_obsidian3.Notice("Thunderegg: no provenance sidecar found next to this map \u2014 can't verify.");
         return;
       }
       const sig = parseSidecarSignature(await this.app.vault.read(sidecar));
       if (!sig) {
-        new import_obsidian3.Notice("Distill: sidecar has no signature block \u2014 this map is unsigned.");
+        new import_obsidian3.Notice("Thunderegg: sidecar has no signature block \u2014 this map is unsigned.");
         return;
       }
       const ok = verifyBytes(json, sig.signature, sig.public_key);
@@ -1485,7 +1485,7 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
         ok ? 8e3 : 1e4
       );
     } catch (e) {
-      new import_obsidian3.Notice(`Distill: verify failed \u2014 ${e?.message ?? e}`);
+      new import_obsidian3.Notice(`Thunderegg: verify failed \u2014 ${e?.message ?? e}`);
     }
   }
   /** Fork a local .distill.json into Forked/, verifying its signature first. */
@@ -1515,7 +1515,7 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
           this.lastForkReceipt = receipt;
       };
       if (problem) {
-        new import_obsidian3.Notice(`Distill: ${problem}.`, 8e3);
+        new import_obsidian3.Notice(`Thunderegg: ${problem}.`, 8e3);
         new ConfirmForkModal(this.app, problem, () => {
           void run();
         }).open();
@@ -1523,7 +1523,7 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
         await run();
       }
     } catch (e) {
-      new import_obsidian3.Notice(`Distill: fork failed \u2014 ${e?.message ?? e}`);
+      new import_obsidian3.Notice(`Thunderegg: fork failed \u2014 ${e?.message ?? e}`);
     }
   }
   /* ═════════════════════════════════════════════════════════════════
@@ -1584,26 +1584,26 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
     const grade = this.getGrade(file);
     const bondCount2 = this.getBondCount(file.path);
     const condenser = this.isCondenser(file.path);
-    const wrap = this.statusRefinery.createSpan({ cls: "distill-refinery-status" });
+    const wrap = this.statusRefinery.createSpan({ cls: "thunderegg-refinery-status" });
     if (grade && this.settings.showGradeBadges) {
       const m = GRADE_META[grade];
       if (m) {
         wrap.createSpan({
-          cls: `distill-grade distill-grade-${m.css}`,
+          cls: `thunderegg-grade thunderegg-grade-${m.css}`,
           text: `${m.icon} ${m.label}`
         });
       }
     }
     if (this.settings.showBondCounts) {
       wrap.createSpan({
-        cls: "distill-bonds",
+        cls: "thunderegg-bonds",
         text: `\u{1F517} ${bondCount2}`
         // 🔗
       });
     }
     if (condenser) {
       wrap.createSpan({
-        cls: "distill-condenser-badge",
+        cls: "thunderegg-condenser-badge",
         text: "\u2697\uFE0F Condenser"
         // ⚗️
       });
@@ -1626,30 +1626,30 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
     const condenserRefs = this.settings.showCondenserLinks ? this.getReferencingCondensers(file.path) : [];
     if (!grade && bondCount2 === 0 && condenserRefs.length === 0)
       return;
-    const bar = createEl("div", { cls: "distill-refinery-bar" });
+    const bar = createEl("div", { cls: "thunderegg-refinery-bar" });
     if (grade && this.settings.showGradeBadges) {
       const m = GRADE_META[grade];
       if (m) {
         bar.createSpan({
-          cls: `distill-grade distill-grade-${m.css}`,
+          cls: `thunderegg-grade thunderegg-grade-${m.css}`,
           text: `${m.icon} ${m.label}`
         });
       }
     }
     if (this.settings.showBondCounts && bondCount2 > 0) {
       bar.createSpan({
-        cls: "distill-bonds",
+        cls: "thunderegg-bonds",
         text: `\u{1F517} ${bondCount2} bond${bondCount2 === 1 ? "" : "s"}`
       });
     }
     if (condenser) {
       bar.createSpan({
-        cls: "distill-condenser-badge",
+        cls: "thunderegg-condenser-badge",
         text: "\u2697\uFE0F Condenser"
       });
     }
     if (condenserRefs.length > 0) {
-      const linksEl = bar.createSpan({ cls: "distill-condenser-links" });
+      const linksEl = bar.createSpan({ cls: "thunderegg-condenser-links" });
       linksEl.createSpan({ text: "Hub: " });
       condenserRefs.forEach((cPath, i) => {
         const name = cPath.replace(/\.md$/, "").split("/").pop() ?? cPath;
@@ -1680,7 +1680,7 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
   stripRefineryBar() {
     this.refineryBarEl?.remove();
     this.refineryBarEl = null;
-    document.querySelectorAll(".distill-refinery-bar").forEach((el) => el.remove());
+    document.querySelectorAll(".thunderegg-refinery-bar").forEach((el) => el.remove());
   }
   /* ═════════════════════════════════════════════════════════════════
      Persistence
@@ -1695,7 +1695,7 @@ var DistillBridgePlugin = class extends import_obsidian3.Plugin {
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
-var DistillBridgeSettingTab = class extends import_obsidian3.PluginSettingTab {
+var ThundereggSettingTab = class extends import_obsidian3.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -1703,18 +1703,18 @@ var DistillBridgeSettingTab = class extends import_obsidian3.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "Distill Bridge" });
+    containerEl.createEl("h2", { text: "Thunderegg" });
     containerEl.createEl("p", {
-      text: "Converts attachments on-device via the Distill engine. The Refinery adds note-maturity Grades, wikilink Bonds, and hub-note Condensers to your vault.",
+      text: "Converts attachments on-device via the Thunderegg engine. The Refinery adds note-maturity Grades, wikilink Bonds, and hub-note Condensers to your vault.",
       cls: "setting-item-description"
     });
     containerEl.createEl("h3", { text: "Conversion" });
-    new import_obsidian3.Setting(containerEl).setName("Engine path").setDesc("Full path to the Distill convert.sh helper script.").addText(
+    new import_obsidian3.Setting(containerEl).setName("Engine path").setDesc("Full path to the Thunderegg convert.sh helper script.").addText(
       (t) => t.setPlaceholder(DEFAULT_SETTINGS.enginePath).setValue(this.plugin.settings.enginePath).onChange(async (v) => {
         this.plugin.settings.enginePath = v.trim();
         await this.plugin.saveSettings();
-        await this.plugin.checkDistillAvailable();
-        this.plugin.renderDistillStatus();
+        await this.plugin.checkThundereggAvailable();
+        this.plugin.renderThundereggStatus();
       })
     );
     new import_obsidian3.Setting(containerEl).setName("Add YAML frontmatter").setDesc(
@@ -1733,10 +1733,10 @@ var DistillBridgeSettingTab = class extends import_obsidian3.PluginSettingTab {
     );
     containerEl.createEl("h3", { text: "Refinery" });
     const refineryDesc = containerEl.createEl("div", {
-      cls: "setting-item-description distill-refinery-desc"
+      cls: "setting-item-description thunderegg-refinery-desc"
     });
     refineryDesc.createEl("p", {
-      text: "The Refinery is Distill\u2019s premium knowledge-management layer. It introduces four concepts:"
+      text: "The Refinery is Thunderegg\u2019s premium knowledge-management layer. It introduces four concepts:"
     });
     const ul = refineryDesc.createEl("ul");
     ul.createEl("li").innerHTML = "<strong>Grades</strong> \u2014 note maturity: <em>Vapor \u2192 Distillate \u2192 Essence</em>";
@@ -1814,7 +1814,7 @@ var DistillBridgeSettingTab = class extends import_obsidian3.PluginSettingTab {
     }).addExtraButton(
       (b) => b.setIcon("trash").setTooltip("Disconnect (delete local token)").onClick(() => {
         clearDeviceToken();
-        new import_obsidian3.Notice("Distill: device token removed.");
+        new import_obsidian3.Notice("Thunderegg: device token removed.");
         this.display();
       })
     );
@@ -1841,10 +1841,10 @@ var DistillBridgeSettingTab = class extends import_obsidian3.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    containerEl.createEl("h3", { text: "Get Distill" });
+    containerEl.createEl("h3", { text: "Get Thunderegg" });
     const cta = containerEl.createEl("p", {
       cls: "setting-item-description"
     });
-    cta.innerHTML = 'Distill converts 20+ file types to clean Markdown \u2014 100% on your Mac. Download the free app or unlock the full Refinery at <a href="https://distillmd.dev">distillmd.dev</a>.';
+    cta.innerHTML = 'Thunderegg converts 20+ file types to clean Markdown \u2014 100% on your Mac. Download the free app or unlock the full Refinery at <a href="https://distillmd.dev">distillmd.dev</a>.';
   }
 };

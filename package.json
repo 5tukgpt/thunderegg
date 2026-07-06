@@ -1,14 +1,14 @@
 {
-  "name": "distill-obsidian",
+  "name": "thunderegg-obsidian",
   "version": "0.2.0",
-  "description": "Convert attachments to Markdown inside Obsidian, on-device, via the Distill engine.",
+  "description": "Convert attachments to Markdown inside Obsidian, on-device, via the Thunderegg engine.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "node esbuild.config.mjs production",
     "test": "vitest run"
   },
-  "keywords": ["obsidian", "markdown", "pdf", "ocr", "distill"],
+  "keywords": ["obsidian", "markdown", "pdf", "ocr", "thunderegg"],
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^20.11.0",

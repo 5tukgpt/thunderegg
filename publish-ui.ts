@@ -120,7 +120,7 @@ export class PublishModal extends Modal {
     const renderProv = () => {
       provWrap.empty();
       this.meta.provenance.forEach((p, i) => {
-        const row = provWrap.createDiv({ cls: "distill-prov-row" });
+        const row = provWrap.createDiv({ cls: "thunderegg-prov-row" });
         new Setting(row)
           .setName(`Source #${i + 1}`)
           .addText((t) => t.setPlaceholder("Title").setValue(p.source_title).onChange((v) => { p.source_title = v; this.refresh(); }))
@@ -138,8 +138,8 @@ export class PublishModal extends Modal {
 
     // Issues + preview
     contentEl.createEl("h3", { text: "Review" });
-    this.issuesEl = contentEl.createDiv({ cls: "distill-publish-issues" });
-    this.previewEl = contentEl.createEl("pre", { cls: "distill-publish-preview" });
+    this.issuesEl = contentEl.createDiv({ cls: "thunderegg-publish-issues" });
+    this.previewEl = contentEl.createEl("pre", { cls: "thunderegg-publish-preview" });
     this.previewEl.style.maxHeight = "240px";
     this.previewEl.style.overflow = "auto";
 
@@ -172,11 +172,11 @@ export class PublishModal extends Modal {
     const warns = [...warnings, ...redaction.warnings, ...excluded.filter((e) => e.type !== "group").map((e) => `Excluded ${e.type} node (${e.reason}).`)];
 
     if (blocks.length) {
-      const ul = this.issuesEl.createEl("ul", { cls: "distill-publish-blocks" });
+      const ul = this.issuesEl.createEl("ul", { cls: "thunderegg-publish-blocks" });
       blocks.forEach((b) => ul.createEl("li", { text: `⛔ ${b}` }));
     }
     if (warns.length) {
-      const ul = this.issuesEl.createEl("ul", { cls: "distill-publish-warnings" });
+      const ul = this.issuesEl.createEl("ul", { cls: "thunderegg-publish-warnings" });
       warns.forEach((w) => ul.createEl("li", { text: `⚠️ ${w}` }));
     }
     if (!blocks.length && !warns.length) {
@@ -185,7 +185,7 @@ export class PublishModal extends Modal {
 
     const ready = blocks.length === 0 && this.ctx.token.length > 0;
     this.publishBtn.disabled = !ready;
-    this.publishBtn.title = this.ctx.token ? (blocks.length ? "Resolve the blocking issues above." : "") : "Connect a device token in Settings → Distill first.";
+    this.publishBtn.title = this.ctx.token ? (blocks.length ? "Resolve the blocking issues above." : "") : "Connect a device token in Settings → Thunderegg first.";
 
     // Export needs no account — only that there are no blocking issues.
     this.exportBtn.disabled = blocks.length > 0;
@@ -196,7 +196,7 @@ export class PublishModal extends Modal {
 
   private async doPublish(): Promise<void> {
     const { artifact } = transformCanvas(this.canvas, this.meta, this.clientUuid, this.lineage);
-    const notice = new Notice("Distill: publishing…", 0);
+    const notice = new Notice("Thunderegg: publishing…", 0);
     try {
       const res = await publishArtifact(this.ctx.baseUrl, this.ctx.token, artifact);
       notice.hide();
@@ -211,7 +211,7 @@ export class PublishModal extends Modal {
   /** Write a shareable map file (+ provenance sidecar) into the vault. No account, no network. */
   private async doExport(): Promise<void> {
     const { artifact } = transformCanvas(this.canvas, this.meta, this.clientUuid, this.lineage);
-    const folder = "Distill Exports";
+    const folder = "Thunderegg Exports";
     if (!this.app.vault.getAbstractFileByPath(folder)) {
       try { await this.app.vault.createFolder(folder); } catch { /* race / exists */ }
     }
@@ -224,7 +224,7 @@ export class PublishModal extends Modal {
     try {
       signature = signArtifact(json);
     } catch (e) {
-      console.error("[Distill] signing failed; exporting unsigned", e);
+      console.error("[Thunderegg] signing failed; exporting unsigned", e);
     }
 
     try {
@@ -322,7 +322,7 @@ export async function importMapPayload(
 }
 
 export async function importForkedMap(app: App, baseUrl: string, mapId: string): Promise<void> {
-  const notice = new Notice("Distill: forking map…", 0);
+  const notice = new Notice("Thunderegg: forking map…", 0);
   try {
     const data = (await fetchForkFile(baseUrl, mapId)) as ForkFile;
     const author = data.author?.handle ?? "unknown";
@@ -352,7 +352,7 @@ export async function forkMapFileIntoVault(
   json: string,
   authorFingerprint: string | null,
 ): Promise<string | null> {
-  const notice = new Notice("Distill: forking map…", 0);
+  const notice = new Notice("Thunderegg: forking map…", 0);
   try {
     const prep = prepareForkImport(json);
     if (prep.blocking.length || !prep.artifact) throw new Error(prep.blocking.join(" "));
@@ -374,7 +374,7 @@ export async function forkMapFileIntoVault(
       lineage,
     });
     notice.hide();
-    new Notice("Fork receipt ready — run “Distill: Copy fork receipt” to share it.");
+    new Notice("Fork receipt ready — run “Thunderegg: Copy fork receipt” to share it.");
     return buildForkReceipt(artifact, lineage);
   } catch (e: unknown) {
     notice.hide();

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Distill pre-land gate (host-aware). Exit 0 = safe to land. Backlog #2.
+# Thunderegg pre-land gate (host-aware). Exit 0 = safe to land. Backlog #2.
 #
 # Linux sandbox (Cowork): typecheck + staged-file guard only — esbuild and
 #   vitest(rolldown) need host-native bindings absent here, so build/test skip.

@@ -33,7 +33,7 @@ const lineage: ForkLineage = {
 const attributionNote = () => buildAttributionNote({
   displayTitle: "Forked Map", canvasName: "Forked Map", forkedFrom: "uuid-src",
   author: lineage.author_fingerprint, license: "CC-BY-4.0",
-  sourceUrl: "Distill Exports/Forked Map.distill.json", lineage,
+  sourceUrl: "Thunderegg Exports/Forked Map.distill.json", lineage,
 });
 
 // Drop the one frontmatter line whose key is `key` from real builder output.

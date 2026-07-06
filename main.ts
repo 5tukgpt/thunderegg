@@ -30,7 +30,7 @@ const execAsync = promisify(exec);
    Settings
    ═══════════════════════════════════════════════════════════════════ */
 
-interface DistillBridgeSettings {
+interface ThundereggSettings {
   /* Core */
   enginePath: string;
   frontmatter: boolean;
@@ -49,7 +49,7 @@ interface DistillBridgeSettings {
   defaultLicense: License;
 }
 
-const DEFAULT_SETTINGS: DistillBridgeSettings = {
+const DEFAULT_SETTINGS: ThundereggSettings = {
   enginePath: `${os.homedir()}/Library/Application Support/MarkItDownDroplet/convert.sh`,
   frontmatter: true,
   openAfter: true,
@@ -69,16 +69,16 @@ const DEFAULT_SETTINGS: DistillBridgeSettings = {
    Plugin
    ═══════════════════════════════════════════════════════════════════ */
 
-export default class DistillBridgePlugin extends Plugin {
-  settings!: DistillBridgeSettings;
+export default class ThundereggPlugin extends Plugin {
+  settings!: ThundereggSettings;
 
   /* UI handles */
-  private statusDistill!: HTMLElement;
+  private statusThunderegg!: HTMLElement;
   private statusRefinery!: HTMLElement;
   private refineryBarEl: HTMLElement | null = null;
 
   /* State */
-  private distillAvailable = false;
+  private thundereggAvailable = false;
   private bonds: BondGraph = emptyBondGraph();
   private lastForkReceipt: string | null = null;
 
@@ -86,14 +86,14 @@ export default class DistillBridgePlugin extends Plugin {
 
   async onload() {
     await this.loadSettings();
-    this.addSettingTab(new DistillBridgeSettingTab(this.app, this));
+    this.addSettingTab(new ThundereggSettingTab(this.app, this));
 
     /* ── Status bar ── */
-    this.statusDistill  = this.addStatusBarItem();
+    this.statusThunderegg  = this.addStatusBarItem();
     this.statusRefinery = this.addStatusBarItem();
 
-    await this.checkDistillAvailable();
-    this.renderDistillStatus();
+    await this.checkThundereggAvailable();
+    this.renderThundereggStatus();
 
     /* ── File-explorer context menu ── */
     this.registerEvent(
@@ -101,34 +101,34 @@ export default class DistillBridgePlugin extends Plugin {
         if (file instanceof TFile && CONVERTIBLE.has(file.extension.toLowerCase())) {
           menu.addItem((item) =>
             item
-              .setTitle("Convert to Markdown (Distill)")
+              .setTitle("Convert to Markdown (Thunderegg)")
               .setIcon("file-down")
               .onClick(() => this.convertFile(file)),
           );
         } else if (file instanceof TFile && file.extension.toLowerCase() === "canvas") {
           menu.addItem((item) =>
             item
-              .setTitle("Publish concept map (Distill)")
+              .setTitle("Publish concept map (Thunderegg)")
               .setIcon("upload")
               .onClick(() => this.openPublishModal(file)),
           );
         } else if (file instanceof TFile && file.name.toLowerCase().endsWith(".distill.json")) {
           menu.addItem((item) =>
             item
-              .setTitle("Verify signature (Distill)")
+              .setTitle("Verify signature (Thunderegg)")
               .setIcon("shield-check")
               .onClick(() => this.verifyMapFile(file)),
           );
           menu.addItem((item) =>
             item
-              .setTitle("Fork map file into vault (Distill)")
+              .setTitle("Fork map file into vault (Thunderegg)")
               .setIcon("git-fork")
               .onClick(() => this.forkMapFile(file)),
           );
         } else if (file instanceof TFolder) {
           menu.addItem((item) =>
             item
-              .setTitle("Distill: convert all attachments")
+              .setTitle("Thunderegg: convert all attachments")
               .setIcon("folder-down")
               .onClick(() => this.convertFolder(file)),
           );
@@ -138,7 +138,7 @@ export default class DistillBridgePlugin extends Plugin {
 
     /* ── Command palette ── */
     this.addCommand({
-      id: "distill-convert-file",
+      id: "thunderegg-convert-file",
       name: "Convert file",
       checkCallback: (checking: boolean) => {
         const f = this.app.workspace.getActiveFile();
@@ -149,13 +149,13 @@ export default class DistillBridgePlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "distill-convert-clipboard",
+      id: "thunderegg-convert-clipboard",
       name: "Convert clipboard",
       callback: () => this.convertClipboard(),
     });
 
     this.addCommand({
-      id: "distill-publish-canvas",
+      id: "thunderegg-publish-canvas",
       name: "Publish concept map",
       checkCallback: (checking: boolean) => {
         const f = this.app.workspace.getActiveFile();
@@ -166,7 +166,7 @@ export default class DistillBridgePlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "distill-verify-map",
+      id: "thunderegg-verify-map",
       name: "Verify concept-map signature",
       checkCallback: (checking: boolean) => {
         const f = this.app.workspace.getActiveFile();
@@ -177,7 +177,7 @@ export default class DistillBridgePlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "distill-fork-map-file",
+      id: "thunderegg-fork-map-file",
       name: "Fork map file into vault",
       checkCallback: (checking: boolean) => {
         const f = this.app.workspace.getActiveFile();
@@ -188,23 +188,23 @@ export default class DistillBridgePlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "distill-copy-fork-receipt",
+      id: "thunderegg-copy-fork-receipt",
       name: "Copy fork receipt",
       checkCallback: (checking: boolean) => {
         const ok = this.lastForkReceipt !== null;
         if (ok && !checking) {
           navigator.clipboard.writeText(this.lastForkReceipt as string);
-          new Notice("Distill: fork receipt copied — paste it wherever you self-report.");
+          new Notice("Thunderegg: fork receipt copied — paste it wherever you self-report.");
         }
         return ok;
       },
     });
 
-    /* ── Fork deep-link: obsidian://distill-fork?map=<id> ── */
+    /* ── Fork deep-link: obsidian://distill-fork?map=<id> (scheme kept for wire compatibility) ── */
     this.registerObsidianProtocolHandler("distill-fork", (params) => {
       const mapId = (params as Record<string, string>).map;
       if (!mapId) {
-        new Notice("Distill: fork link is missing ?map=…");
+        new Notice("Thunderegg: fork link is missing ?map=…");
         return;
       }
       importForkedMap(this.app, this.settings.serverBaseUrl, mapId);
@@ -234,10 +234,10 @@ export default class DistillBridgePlugin extends Plugin {
       }),
     );
 
-    /* ── Re-check Distill engine availability every 60 s ── */
+    /* ── Re-check Thunderegg engine availability every 60 s ── */
     this.registerInterval(
       window.setInterval(() => {
-        this.checkDistillAvailable().then(() => this.renderDistillStatus());
+        this.checkThundereggAvailable().then(() => this.renderThundereggStatus());
       }, 60_000),
     );
   }
@@ -247,31 +247,31 @@ export default class DistillBridgePlugin extends Plugin {
   }
 
   /* ═════════════════════════════════════════════════════════════════
-     Distill availability
+     Thunderegg availability
      ═════════════════════════════════════════════════════════════════ */
 
-  private async checkDistillAvailable(): Promise<void> {
+  private async checkThundereggAvailable(): Promise<void> {
     try {
       await fs.promises.access(this.settings.enginePath, fs.constants.X_OK);
-      this.distillAvailable = true;
+      this.thundereggAvailable = true;
     } catch {
-      this.distillAvailable = false;
+      this.thundereggAvailable = false;
     }
   }
 
-  private renderDistillStatus(): void {
-    this.statusDistill.empty();
-    const dot   = this.distillAvailable ? "🟢" : "🔴"; // 🟢 / 🔴
-    const label = this.distillAvailable ? "Ready" : "Unavailable";
-    this.statusDistill.createSpan({
-      cls: "distill-status",
+  private renderThundereggStatus(): void {
+    this.statusThunderegg.empty();
+    const dot   = this.thundereggAvailable ? "🟢" : "🔴"; // 🟢 / 🔴
+    const label = this.thundereggAvailable ? "Ready" : "Unavailable";
+    this.statusThunderegg.createSpan({
+      cls: "thunderegg-status",
       text: `⚗️ ${label} ${dot}`,  // ⚗️
     });
-    this.statusDistill.setAttribute(
+    this.statusThunderegg.setAttribute(
       "aria-label",
-      this.distillAvailable
-        ? `Distill engine: ${this.settings.enginePath}`
-        : "Distill engine not found — check Settings → Distill",
+      this.thundereggAvailable
+        ? `Thunderegg engine: ${this.settings.enginePath}`
+        : "Thunderegg engine not found — check Settings → Thunderegg",
     );
   }
 
@@ -294,7 +294,7 @@ export default class DistillBridgePlugin extends Plugin {
   async convertFile(file: TFile): Promise<void> {
     const engine = this.settings.enginePath;
     const full   = this.absPath(file);
-    const notice = new Notice(`Distill: converting ${file.name}…`, 0);
+    const notice = new Notice(`Thunderegg: converting ${file.name}…`, 0);
 
     try {
       const env: Record<string, string> = { ...process.env } as Record<string, string>;
@@ -302,7 +302,7 @@ export default class DistillBridgePlugin extends Plugin {
 
       await execAsync(`${this.shellQuote(engine)} ${this.shellQuote(full)}`, { env });
       notice.hide();
-      new Notice(`✅ Distill: created ${file.name}.md`);
+      new Notice(`✅ Thunderegg: created ${file.name}.md`);
 
       if (this.settings.openAfter) {
         const mdPath = normalizePath(`${file.path}.md`);
@@ -313,10 +313,10 @@ export default class DistillBridgePlugin extends Plugin {
     } catch (e: any) {
       notice.hide();
       new Notice(
-        `❌ Distill failed: ${e?.message ?? e}. Is the Distill app installed?`,
+        `❌ Thunderegg failed: ${e?.message ?? e}. Is the Thunderegg app installed?`,
         8000,
       );
-      console.error("[Distill]", e);
+      console.error("[Thunderegg]", e);
     }
   }
 
@@ -332,11 +332,11 @@ export default class DistillBridgePlugin extends Plugin {
     walk(folder);
 
     if (targets.length === 0) {
-      new Notice("Distill: no convertible files here.");
+      new Notice("Thunderegg: no convertible files here.");
       return;
     }
 
-    const notice = new Notice(`Distill: converting ${targets.length} files…`, 0);
+    const notice = new Notice(`Thunderegg: converting ${targets.length} files…`, 0);
     let ok = 0;
 
     for (const t of targets) {
@@ -349,12 +349,12 @@ export default class DistillBridgePlugin extends Plugin {
         );
         ok++;
       } catch (e) {
-        console.error("[Distill]", t.path, e);
+        console.error("[Thunderegg]", t.path, e);
       }
     }
 
     notice.hide();
-    new Notice(`✅ Distill: converted ${ok}/${targets.length} files.`);
+    new Notice(`✅ Thunderegg: converted ${ok}/${targets.length} files.`);
   }
 
   /* ═════════════════════════════════════════════════════════════════
@@ -390,10 +390,10 @@ export default class DistillBridgePlugin extends Plugin {
 
     const ext      = clipHtml.trim() ? "html" : "txt";
     const stamp    = Date.now();
-    const tempName = `_distill_clip_${stamp}.${ext}`;
+    const tempName = `_thunderegg_clip_${stamp}.${ext}`;
     const tempPath = normalizePath(tempName);
 
-    const notice = new Notice("Distill: converting clipboard…", 0);
+    const notice = new Notice("Thunderegg: converting clipboard…", 0);
 
     try {
       // Write clipboard content to a temporary file inside the vault
@@ -427,7 +427,7 @@ export default class DistillBridgePlugin extends Plugin {
         const nicePath = normalizePath(niceName);
         await this.app.fileManager.renameFile(mdFile, nicePath);
 
-        new Notice(`✅ Distill: created ${niceName}`);
+        new Notice(`✅ Thunderegg: created ${niceName}`);
         if (this.settings.openAfter) {
           const renamed = this.app.vault.getAbstractFileByPath(nicePath);
           if (renamed instanceof TFile) {
@@ -445,7 +445,7 @@ export default class DistillBridgePlugin extends Plugin {
         if (tf instanceof TFile) await this.app.vault.delete(tf);
       } catch { /* swallow */ }
       new Notice(`❌ Clipboard conversion failed: ${e?.message ?? e}`, 8000);
-      console.error("[Distill]", e);
+      console.error("[Thunderegg]", e);
     }
   }
 
@@ -459,7 +459,7 @@ export default class DistillBridgePlugin extends Plugin {
     try {
       canvas = JSON.parse(await this.app.vault.read(file)) as Canvas;
     } catch (e: any) {
-      new Notice(`Distill: could not read canvas — ${e?.message ?? e}`);
+      new Notice(`Thunderegg: could not read canvas — ${e?.message ?? e}`);
       return;
     }
     const ctx: PublishContext = {
@@ -489,12 +489,12 @@ export default class DistillBridgePlugin extends Plugin {
       const sidecarPath = normalizePath(file.path.replace(/[^/]+$/, `${base} — provenance.md`));
       const sidecar = this.app.vault.getAbstractFileByPath(sidecarPath);
       if (!(sidecar instanceof TFile)) {
-        new Notice("Distill: no provenance sidecar found next to this map — can't verify.");
+        new Notice("Thunderegg: no provenance sidecar found next to this map — can't verify.");
         return;
       }
       const sig = parseSidecarSignature(await this.app.vault.read(sidecar));
       if (!sig) {
-        new Notice("Distill: sidecar has no signature block — this map is unsigned.");
+        new Notice("Thunderegg: sidecar has no signature block — this map is unsigned.");
         return;
       }
       const ok = verifyBytes(json, sig.signature, sig.public_key);
@@ -505,7 +505,7 @@ export default class DistillBridgePlugin extends Plugin {
         ok ? 8000 : 10000,
       );
     } catch (e: any) {
-      new Notice(`Distill: verify failed — ${e?.message ?? e}`);
+      new Notice(`Thunderegg: verify failed — ${e?.message ?? e}`);
     }
   }
 
@@ -538,13 +538,13 @@ export default class DistillBridgePlugin extends Plugin {
         if (receipt) this.lastForkReceipt = receipt;
       };
       if (problem) {
-        new Notice(`Distill: ${problem}.`, 8000);
+        new Notice(`Thunderegg: ${problem}.`, 8000);
         new ConfirmForkModal(this.app, problem, () => { void run(); }).open();
       } else {
         await run();
       }
     } catch (e: any) {
-      new Notice(`Distill: fork failed — ${e?.message ?? e}`);
+      new Notice(`Thunderegg: fork failed — ${e?.message ?? e}`);
     }
   }
 
@@ -620,13 +620,13 @@ export default class DistillBridgePlugin extends Plugin {
     const bondCount = this.getBondCount(file.path);
     const condenser = this.isCondenser(file.path);
 
-    const wrap = this.statusRefinery.createSpan({ cls: "distill-refinery-status" });
+    const wrap = this.statusRefinery.createSpan({ cls: "thunderegg-refinery-status" });
 
     if (grade && this.settings.showGradeBadges) {
       const m = GRADE_META[grade];
       if (m) {
         wrap.createSpan({
-          cls: `distill-grade distill-grade-${m.css}`,
+          cls: `thunderegg-grade thunderegg-grade-${m.css}`,
           text: `${m.icon} ${m.label}`,
         });
       }
@@ -634,14 +634,14 @@ export default class DistillBridgePlugin extends Plugin {
 
     if (this.settings.showBondCounts) {
       wrap.createSpan({
-        cls: "distill-bonds",
+        cls: "thunderegg-bonds",
         text: `🔗 ${bondCount}`,  // 🔗
       });
     }
 
     if (condenser) {
       wrap.createSpan({
-        cls: "distill-condenser-badge",
+        cls: "thunderegg-condenser-badge",
         text: "⚗️ Condenser",  // ⚗️
       });
     }
@@ -669,14 +669,14 @@ export default class DistillBridgePlugin extends Plugin {
     // Nothing meaningful to render
     if (!grade && bondCount === 0 && condenserRefs.length === 0) return;
 
-    const bar = createEl("div", { cls: "distill-refinery-bar" });
+    const bar = createEl("div", { cls: "thunderegg-refinery-bar" });
 
     /* Grade badge */
     if (grade && this.settings.showGradeBadges) {
       const m = GRADE_META[grade];
       if (m) {
         bar.createSpan({
-          cls: `distill-grade distill-grade-${m.css}`,
+          cls: `thunderegg-grade thunderegg-grade-${m.css}`,
           text: `${m.icon} ${m.label}`,
         });
       }
@@ -685,7 +685,7 @@ export default class DistillBridgePlugin extends Plugin {
     /* Bond count */
     if (this.settings.showBondCounts && bondCount > 0) {
       bar.createSpan({
-        cls: "distill-bonds",
+        cls: "thunderegg-bonds",
         text: `🔗 ${bondCount} bond${bondCount === 1 ? "" : "s"}`,
       });
     }
@@ -693,14 +693,14 @@ export default class DistillBridgePlugin extends Plugin {
     /* Condenser flag */
     if (condenser) {
       bar.createSpan({
-        cls: "distill-condenser-badge",
+        cls: "thunderegg-condenser-badge",
         text: "⚗️ Condenser",
       });
     }
 
     /* Condenser back-links */
     if (condenserRefs.length > 0) {
-      const linksEl = bar.createSpan({ cls: "distill-condenser-links" });
+      const linksEl = bar.createSpan({ cls: "thunderegg-condenser-links" });
       linksEl.createSpan({ text: "Hub: " });
       condenserRefs.forEach((cPath, i) => {
         const name = cPath.replace(/\.md$/, "").split("/").pop() ?? cPath;
@@ -735,7 +735,7 @@ export default class DistillBridgePlugin extends Plugin {
     this.refineryBarEl?.remove();
     this.refineryBarEl = null;
     // Clean up orphans left by rapid tab switches
-    document.querySelectorAll(".distill-refinery-bar").forEach((el) => el.remove());
+    document.querySelectorAll(".thunderegg-refinery-bar").forEach((el) => el.remove());
   }
 
   /* ═════════════════════════════════════════════════════════════════
@@ -763,10 +763,10 @@ function sleep(ms: number): Promise<void> {
    Settings Tab
    ═══════════════════════════════════════════════════════════════════ */
 
-class DistillBridgeSettingTab extends PluginSettingTab {
-  plugin: DistillBridgePlugin;
+class ThundereggSettingTab extends PluginSettingTab {
+  plugin: ThundereggPlugin;
 
-  constructor(app: App, plugin: DistillBridgePlugin) {
+  constructor(app: App, plugin: ThundereggPlugin) {
     super(app, plugin);
     this.plugin = plugin;
   }
@@ -776,10 +776,10 @@ class DistillBridgeSettingTab extends PluginSettingTab {
     containerEl.empty();
 
     /* ── Header ── */
-    containerEl.createEl("h2", { text: "Distill Bridge" });
+    containerEl.createEl("h2", { text: "Thunderegg" });
     containerEl.createEl("p", {
       text:
-        "Converts attachments on-device via the Distill engine. " +
+        "Converts attachments on-device via the Thunderegg engine. " +
         "The Refinery adds note-maturity Grades, wikilink Bonds, " +
         "and hub-note Condensers to your vault.",
       cls: "setting-item-description",
@@ -792,7 +792,7 @@ class DistillBridgeSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Engine path")
-      .setDesc("Full path to the Distill convert.sh helper script.")
+      .setDesc("Full path to the Thunderegg convert.sh helper script.")
       .addText((t) =>
         t
           .setPlaceholder(DEFAULT_SETTINGS.enginePath)
@@ -800,8 +800,8 @@ class DistillBridgeSettingTab extends PluginSettingTab {
           .onChange(async (v) => {
             this.plugin.settings.enginePath = v.trim();
             await this.plugin.saveSettings();
-            await (this.plugin as any).checkDistillAvailable();
-            (this.plugin as any).renderDistillStatus();
+            await (this.plugin as any).checkThundereggAvailable();
+            (this.plugin as any).renderThundereggStatus();
           }),
       );
 
@@ -833,11 +833,11 @@ class DistillBridgeSettingTab extends PluginSettingTab {
     containerEl.createEl("h3", { text: "Refinery" });
 
     const refineryDesc = containerEl.createEl("div", {
-      cls: "setting-item-description distill-refinery-desc",
+      cls: "setting-item-description thunderegg-refinery-desc",
     });
     refineryDesc.createEl("p", {
       text:
-        "The Refinery is Distill’s premium knowledge-management layer. " +
+        "The Refinery is Thunderegg’s premium knowledge-management layer. " +
         "It introduces four concepts:",
     });
     const ul = refineryDesc.createEl("ul");
@@ -968,7 +968,7 @@ class DistillBridgeSettingTab extends PluginSettingTab {
       .addExtraButton((b) =>
         b.setIcon("trash").setTooltip("Disconnect (delete local token)").onClick(() => {
           clearDeviceToken();
-          new Notice("Distill: device token removed.");
+          new Notice("Thunderegg: device token removed.");
           this.display();
         }),
       );
@@ -1015,12 +1015,12 @@ class DistillBridgeSettingTab extends PluginSettingTab {
     /* ────────────────────────────────────────────────────────────── */
     /*  CTA                                                          */
     /* ────────────────────────────────────────────────────────────── */
-    containerEl.createEl("h3", { text: "Get Distill" });
+    containerEl.createEl("h3", { text: "Get Thunderegg" });
     const cta = containerEl.createEl("p", {
       cls: "setting-item-description",
     });
     cta.innerHTML =
-      "Distill converts 20+ file types to clean Markdown — 100% on your Mac. " +
+      "Thunderegg converts 20+ file types to clean Markdown — 100% on your Mac. " +
       'Download the free app or unlock the full Refinery at ' +
       '<a href="https://distillmd.dev">distillmd.dev</a>.';
   }
