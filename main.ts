@@ -1,5 +1,5 @@
 import {
-  App, Notice, Plugin, PluginSettingTab, Setting,
+  App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting,
   TFile, TFolder, TAbstractFile, normalizePath,
   MarkdownView,
 } from "obsidian";
@@ -25,6 +25,27 @@ const execAsync = promisify(exec);
  * Core domain logic (CONVERTIBLE, Grades, Bond graph) lives in core.ts
  * so it can be unit-tested without Obsidian. Keep main.ts to glue + UI.
  */
+
+/*
+ * Electron's clipboard is only reachable at runtime through the renderer's
+ * `window.require` in Obsidian's desktop shell — there is no ESM import for it.
+ * Declare the minimal surface we touch so the access stays fully typed.
+ */
+declare global {
+  interface Window {
+    require?: (module: string) => unknown;
+  }
+}
+
+interface ElectronClipboardLike {
+  readHTML?: () => string;
+  readText?: () => string;
+}
+
+interface ElectronLike {
+  clipboard?: ElectronClipboardLike;
+  remote?: { clipboard?: ElectronClipboardLike };
+}
 
 /* ═══════════════════════════════════════════════════════════════════
    Settings
@@ -138,65 +159,66 @@ export default class ThundereggPlugin extends Plugin {
 
     /* ── Command palette ── */
     this.addCommand({
-      id: "thunderegg-convert-file",
+      id: "convert-file",
       name: "Convert file",
       checkCallback: (checking: boolean) => {
         const f = this.app.workspace.getActiveFile();
-        const ok = !!f && CONVERTIBLE.has(f.extension.toLowerCase());
-        if (ok && !checking) this.convertFile(f as TFile);
+        const ok = f instanceof TFile && CONVERTIBLE.has(f.extension.toLowerCase());
+        if (ok && !checking) void this.convertFile(f);
         return ok;
       },
     });
 
     this.addCommand({
-      id: "thunderegg-convert-clipboard",
+      id: "convert-clipboard",
       name: "Convert clipboard",
-      callback: () => this.convertClipboard(),
+      callback: () => { void this.convertClipboard(); },
     });
 
     this.addCommand({
-      id: "thunderegg-publish-canvas",
+      id: "publish-canvas",
       name: "Publish concept map",
       checkCallback: (checking: boolean) => {
         const f = this.app.workspace.getActiveFile();
-        const ok = !!f && f.extension.toLowerCase() === "canvas";
-        if (ok && !checking) this.openPublishModal(f as TFile);
+        const ok = f instanceof TFile && f.extension.toLowerCase() === "canvas";
+        if (ok && !checking) void this.openPublishModal(f);
         return ok;
       },
     });
 
     this.addCommand({
-      id: "thunderegg-verify-map",
+      id: "verify-map",
       name: "Verify concept-map signature",
       checkCallback: (checking: boolean) => {
         const f = this.app.workspace.getActiveFile();
-        const ok = !!f && f.name.toLowerCase().endsWith(".distill.json");
-        if (ok && !checking) this.verifyMapFile(f as TFile);
+        const ok = f instanceof TFile && f.name.toLowerCase().endsWith(".distill.json");
+        if (ok && !checking) void this.verifyMapFile(f);
         return ok;
       },
     });
 
     this.addCommand({
-      id: "thunderegg-fork-map-file",
+      id: "fork-map-file",
       name: "Fork map file into vault",
       checkCallback: (checking: boolean) => {
         const f = this.app.workspace.getActiveFile();
-        const ok = !!f && f.name.toLowerCase().endsWith(".distill.json");
-        if (ok && !checking) this.forkMapFile(f as TFile);
+        const ok = f instanceof TFile && f.name.toLowerCase().endsWith(".distill.json");
+        if (ok && !checking) void this.forkMapFile(f);
         return ok;
       },
     });
 
     this.addCommand({
-      id: "thunderegg-copy-fork-receipt",
+      id: "copy-fork-receipt",
       name: "Copy fork receipt",
       checkCallback: (checking: boolean) => {
-        const ok = this.lastForkReceipt !== null;
-        if (ok && !checking) {
-          navigator.clipboard.writeText(this.lastForkReceipt as string);
+        const receipt = this.lastForkReceipt;
+        if (receipt === null) return false;
+        if (!checking) {
+          void navigator.clipboard.writeText(receipt);
           new Notice("Thunderegg: fork receipt copied — paste it wherever you self-report.");
         }
-        return ok;
+        return true;
       },
     });
 
@@ -207,7 +229,7 @@ export default class ThundereggPlugin extends Plugin {
         new Notice("Thunderegg: fork link is missing ?map=…");
         return;
       }
-      importForkedMap(this.app, this.settings.serverBaseUrl, mapId);
+      void importForkedMap(this.app, this.settings.serverBaseUrl, mapId);
     });
 
     /* ── Refinery bootstrap ── */
@@ -237,7 +259,7 @@ export default class ThundereggPlugin extends Plugin {
     /* ── Re-check Thunderegg engine availability every 60 s ── */
     this.registerInterval(
       window.setInterval(() => {
-        this.checkThundereggAvailable().then(() => this.renderThundereggStatus());
+        void this.checkThundereggAvailable().then(() => this.renderThundereggStatus());
       }, 60_000),
     );
   }
@@ -250,7 +272,7 @@ export default class ThundereggPlugin extends Plugin {
      Thunderegg availability
      ═════════════════════════════════════════════════════════════════ */
 
-  private async checkThundereggAvailable(): Promise<void> {
+  async checkThundereggAvailable(): Promise<void> {
     try {
       await fs.promises.access(this.settings.enginePath, fs.constants.X_OK);
       this.thundereggAvailable = true;
@@ -259,7 +281,7 @@ export default class ThundereggPlugin extends Plugin {
     }
   }
 
-  private renderThundereggStatus(): void {
+  renderThundereggStatus(): void {
     this.statusThunderegg.empty();
     const dot   = this.thundereggAvailable ? "🟢" : "🔴"; // 🟢 / 🔴
     const label = this.thundereggAvailable ? "Ready" : "Unavailable";
@@ -281,8 +303,8 @@ export default class ThundereggPlugin extends Plugin {
 
   /** Resolve a vault-relative TFile to an absolute filesystem path. */
   private absPath(file: TFile): string {
-    // @ts-ignore — getBasePath exists on desktop FileSystemAdapter
-    const base: string = (this.app.vault.adapter as any).getBasePath?.() ?? "";
+    const adapter = this.app.vault.adapter;
+    const base = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
     return path.join(base, file.path);
   }
 
@@ -308,12 +330,12 @@ export default class ThundereggPlugin extends Plugin {
         const mdPath = normalizePath(`${file.path}.md`);
         await sleep(300);
         const md = this.app.vault.getAbstractFileByPath(mdPath);
-        if (md instanceof TFile) this.app.workspace.getLeaf(true).openFile(md);
+        if (md instanceof TFile) void this.app.workspace.getLeaf(true).openFile(md);
       }
-    } catch (e: any) {
+    } catch (e) {
       notice.hide();
       new Notice(
-        `❌ Thunderegg failed: ${e?.message ?? e}. Is the Thunderegg app installed?`,
+        `❌ Thunderegg failed: ${errMsg(e)}. Is the Thunderegg app installed?`,
         8000,
       );
       console.error("[Thunderegg]", e);
@@ -366,12 +388,12 @@ export default class ThundereggPlugin extends Plugin {
     let clipHtml = "";
     let clipText = "";
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires -- Electron's clipboard is only reachable via require() at runtime in Obsidian's desktop shell; there is no ESM import for it.
-      const electron = require("electron");
+      if (!window.require) throw new Error("window.require unavailable");
+      const electron = window.require("electron") as ElectronLike;
       const cb = electron.clipboard ?? electron.remote?.clipboard;
       if (cb) {
-        clipHtml = (cb.readHTML?.() as string) ?? "";
-        clipText = (cb.readText?.() as string) ?? "";
+        clipHtml = cb.readHTML?.() ?? "";
+        clipText = cb.readText?.() ?? "";
       }
     } catch {
       try {
@@ -409,7 +431,7 @@ export default class ThundereggPlugin extends Plugin {
       );
 
       // Remove the temporary source file
-      await this.app.vault.delete(tempFile);
+      await this.app.fileManager.trashFile(tempFile);
       notice.hide();
 
       // Locate the generated .md and give it a friendly name
@@ -431,20 +453,20 @@ export default class ThundereggPlugin extends Plugin {
         if (this.settings.openAfter) {
           const renamed = this.app.vault.getAbstractFileByPath(nicePath);
           if (renamed instanceof TFile) {
-            this.app.workspace.getLeaf(true).openFile(renamed);
+            void this.app.workspace.getLeaf(true).openFile(renamed);
           }
         }
       } else {
         new Notice("✅ Clipboard converted (file may take a moment to appear).");
       }
-    } catch (e: any) {
+    } catch (e) {
       notice.hide();
       // Best-effort cleanup
       try {
         const tf = this.app.vault.getAbstractFileByPath(tempPath);
-        if (tf instanceof TFile) await this.app.vault.delete(tf);
+        if (tf instanceof TFile) await this.app.fileManager.trashFile(tf);
       } catch { /* swallow */ }
-      new Notice(`❌ Clipboard conversion failed: ${e?.message ?? e}`, 8000);
+      new Notice(`❌ Clipboard conversion failed: ${errMsg(e)}`, 8000);
       console.error("[Thunderegg]", e);
     }
   }
@@ -458,8 +480,8 @@ export default class ThundereggPlugin extends Plugin {
     let canvas: Canvas;
     try {
       canvas = JSON.parse(await this.app.vault.read(file)) as Canvas;
-    } catch (e: any) {
-      new Notice(`Thunderegg: could not read canvas — ${e?.message ?? e}`);
+    } catch (e) {
+      new Notice(`Thunderegg: could not read canvas — ${errMsg(e)}`);
       return;
     }
     const ctx: PublishContext = {
@@ -504,8 +526,8 @@ export default class ThundereggPlugin extends Plugin {
           : "❌ Signature INVALID — the map may have been altered or re-signed.",
         ok ? 8000 : 10000,
       );
-    } catch (e: any) {
-      new Notice(`Thunderegg: verify failed — ${e?.message ?? e}`);
+    } catch (e) {
+      new Notice(`Thunderegg: verify failed — ${errMsg(e)}`);
     }
   }
 
@@ -543,8 +565,8 @@ export default class ThundereggPlugin extends Plugin {
       } else {
         await run();
       }
-    } catch (e: any) {
-      new Notice(`Thunderegg: fork failed — ${e?.message ?? e}`);
+    } catch (e) {
+      new Notice(`Thunderegg: fork failed — ${errMsg(e)}`);
     }
   }
 
@@ -569,7 +591,7 @@ export default class ThundereggPlugin extends Plugin {
   /* ── Bond graph ─────────────────────────────────────────────── */
 
   /** Build the Bond graph from Obsidian's resolved-link cache (see core.ts). */
-  private buildBondGraph(): void {
+  buildBondGraph(): void {
     this.bonds = buildBondGraph(
       this.app.metadataCache.resolvedLinks,
       this.settings.vaultRoot,
@@ -669,7 +691,7 @@ export default class ThundereggPlugin extends Plugin {
     // Nothing meaningful to render
     if (!grade && bondCount === 0 && condenserRefs.length === 0) return;
 
-    const bar = createEl("div", { cls: "thunderegg-refinery-bar" });
+    const bar = createDiv({ cls: "thunderegg-refinery-bar" });
 
     /* Grade badge */
     if (grade && this.settings.showGradeBadges) {
@@ -713,7 +735,7 @@ export default class ThundereggPlugin extends Plugin {
           ev.preventDefault();
           const target = this.app.vault.getAbstractFileByPath(cPath);
           if (target instanceof TFile) {
-            this.app.workspace.getLeaf(false).openFile(target);
+            void this.app.workspace.getLeaf(false).openFile(target);
           }
         });
         if (i < condenserRefs.length - 1) {
@@ -735,7 +757,7 @@ export default class ThundereggPlugin extends Plugin {
     this.refineryBarEl?.remove();
     this.refineryBarEl = null;
     // Clean up orphans left by rapid tab switches
-    document.querySelectorAll(".thunderegg-refinery-bar").forEach((el) => el.remove());
+    activeDocument.querySelectorAll(".thunderegg-refinery-bar").forEach((el) => el.remove());
   }
 
   /* ═════════════════════════════════════════════════════════════════
@@ -743,7 +765,11 @@ export default class ThundereggPlugin extends Plugin {
      ═════════════════════════════════════════════════════════════════ */
 
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    this.settings = Object.assign(
+      {},
+      DEFAULT_SETTINGS,
+      (await this.loadData()) as Partial<ThundereggSettings> | null,
+    );
   }
 
   async saveSettings() {
@@ -756,7 +782,12 @@ export default class ThundereggPlugin extends Plugin {
    ═══════════════════════════════════════════════════════════════════ */
 
 function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
+  return new Promise((r) => window.setTimeout(r, ms));
+}
+
+/** Human-readable message from an unknown thrown value. */
+function errMsg(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -799,8 +830,8 @@ class ThundereggSettingTab extends PluginSettingTab {
           .onChange(async (v) => {
             this.plugin.settings.enginePath = v.trim();
             await this.plugin.saveSettings();
-            await (this.plugin as any).checkThundereggAvailable();
-            (this.plugin as any).renderThundereggStatus();
+            await this.plugin.checkThundereggAvailable();
+            this.plugin.renderThundereggStatus();
           }),
       );
 
@@ -831,7 +862,7 @@ class ThundereggSettingTab extends PluginSettingTab {
     /* ────────────────────────────────────────────────────────────── */
     new Setting(containerEl).setName("Refinery").setHeading();
 
-    const refineryDesc = containerEl.createEl("div", {
+    const refineryDesc = containerEl.createDiv({
       cls: "setting-item-description thunderegg-refinery-desc",
     });
     refineryDesc.createEl("p", {
@@ -840,14 +871,20 @@ class ThundereggSettingTab extends PluginSettingTab {
         "It introduces four concepts:",
     });
     const ul = refineryDesc.createEl("ul");
-    ul.createEl("li").innerHTML =
-      "<strong>Grades</strong> — note maturity: <em>Vapor → Distillate → Essence</em>";
-    ul.createEl("li").innerHTML =
-      "<strong>Bonds</strong> — connections discovered via <code>[[wikilinks]]</code>";
-    ul.createEl("li").innerHTML =
-      "<strong>Condensers</strong> — hub notes with many Bonds";
-    ul.createEl("li").innerHTML =
-      "<strong>Fractions</strong> — folder-level grouping of related notes";
+    const liGrades = ul.createEl("li");
+    liGrades.createEl("strong", { text: "Grades" });
+    liGrades.appendText(" — note maturity: ");
+    liGrades.createEl("em", { text: "Vapor → Distillate → Essence" });
+    const liBonds = ul.createEl("li");
+    liBonds.createEl("strong", { text: "Bonds" });
+    liBonds.appendText(" — connections discovered via ");
+    liBonds.createEl("code", { text: "[[wikilinks]]" });
+    const liCondensers = ul.createEl("li");
+    liCondensers.createEl("strong", { text: "Condensers" });
+    liCondensers.appendText(" — hub notes with many Bonds");
+    const liFractions = ul.createEl("li");
+    liFractions.createEl("strong", { text: "Fractions" });
+    liFractions.appendText(" — folder-level grouping of related notes");
 
     new Setting(containerEl)
       .setName("Enable Refinery")
@@ -878,7 +915,7 @@ class ThundereggSettingTab extends PluginSettingTab {
             this.plugin.settings.vaultRoot = v.trim();
             await this.plugin.saveSettings();
             if (this.plugin.settings.refineryEnabled) {
-              (this.plugin as any).buildBondGraph();
+              this.plugin.buildBondGraph();
             }
           }),
       );
@@ -985,7 +1022,7 @@ class ThundereggSettingTab extends PluginSettingTab {
       .setName("Default visibility")
       .setDesc("Pre-selected visibility for new publishes.")
       .addDropdown((d) => {
-        (["private", "followers", "public"] as const).forEach((v) => d.addOption(v, v));
+        (["private", "followers", "public"] as const).forEach((v) => { d.addOption(v, v); });
         d.setValue(this.plugin.settings.defaultVisibility).onChange(async (v) => {
           this.plugin.settings.defaultVisibility = v as Visibility;
           await this.plugin.saveSettings();
@@ -1018,9 +1055,11 @@ class ThundereggSettingTab extends PluginSettingTab {
     const cta = containerEl.createEl("p", {
       cls: "setting-item-description",
     });
-    cta.innerHTML =
+    cta.appendText(
       "Thunderegg converts 20+ file types to clean Markdown — 100% on your Mac. " +
-      'Download the free app or unlock the full Refinery at ' +
-      '<a href="https://distillmd.dev">distillmd.dev</a>.';
+      "Download the free app or unlock the full Refinery at ",
+    );
+    cta.createEl("a", { href: "https://distillmd.dev", text: "distillmd.dev" });
+    cta.appendText(".");
   }
 }

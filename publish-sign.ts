@@ -33,7 +33,7 @@ export interface Signature {
 
 /** base64 SPKI-DER of an Ed25519 public key. */
 export function publicKeySpki(pub: KeyObject): string {
-  return (pub.export({ type: "spki", format: "der" }) as Buffer).toString("base64");
+  return pub.export({ type: "spki", format: "der" }).toString("base64");
 }
 
 /** Sign UTF-8 bytes with an Ed25519 private key → base64 signature. */

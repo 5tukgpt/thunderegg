@@ -438,8 +438,12 @@ export function validatePublishMeta(meta: PublishMeta): string[] {
 /** Full structural re-check of an assembled artifact (defense in depth). */
 export function validateArtifact(a: DistillMapArtifact): string[] {
   const errs: string[] = [];
-  if (a.schema !== "distill.map/0.2") errs.push(`Unexpected schema "${a.schema}".`);
-  if (a.map?.format !== "jsoncanvas/1.0") errs.push(`Unexpected map.format "${a.map?.format}".`);
+  // Widen the literal types: this is defense in depth over data that may not
+  // actually satisfy the declared interface (e.g. parsed JSON).
+  const schema: string = a.schema;
+  if (schema !== "distill.map/0.2") errs.push(`Unexpected schema "${schema}".`);
+  const mapFormat: string | undefined = a.map?.format;
+  if (mapFormat !== "jsoncanvas/1.0") errs.push(`Unexpected map.format "${String(mapFormat)}".`);
   for (const n of a.map?.nodes ?? []) {
     if (n.text.length > NODE_TEXT_CAP) errs.push(`Node ${n.id} exceeds ${NODE_TEXT_CAP} chars.`);
   }

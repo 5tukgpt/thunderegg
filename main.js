@@ -717,8 +717,9 @@ async function publishArtifact(baseUrl, token, artifact) {
     let msg = `HTTP ${res.status}`;
     try {
       const j = res.json;
-      if (j && typeof j.error === "string")
+      if (j && typeof j === "object" && typeof j.error === "string") {
         msg = j.error;
+      }
     } catch {
     }
     throw new Error(msg);
@@ -845,21 +846,27 @@ var PublishModal = class extends import_obsidian2.Modal {
       this.refresh();
     }));
     new import_obsidian2.Setting(contentEl).setName("Visibility").addDropdown((d) => {
-      VISIBILITIES.forEach((v) => d.addOption(v, v));
+      VISIBILITIES.forEach((v) => {
+        d.addOption(v, v);
+      });
       d.setValue(this.meta.visibility).onChange((v) => {
         this.meta.visibility = v;
         this.refresh();
       });
     });
     new import_obsidian2.Setting(contentEl).setName("Map license").addDropdown((d) => {
-      LICENSES.forEach((l) => d.addOption(l, l));
+      LICENSES.forEach((l) => {
+        d.addOption(l, l);
+      });
       d.setValue(this.meta.license).onChange((v) => {
         this.meta.license = v;
         this.refresh();
       });
     });
     new import_obsidian2.Setting(contentEl).setName("AI assistance").setDesc("Disclose whether AI helped make this map (travels in the artifact).").addDropdown((d) => {
-      AI_ASSISTED.forEach((a) => d.addOption(a, a));
+      AI_ASSISTED.forEach((a) => {
+        d.addOption(a, a);
+      });
       d.setValue(this.meta.ai_assisted ?? "none").onChange((v) => {
         this.meta.ai_assisted = v;
         this.refresh();
@@ -878,13 +885,17 @@ var PublishModal = class extends import_obsidian2.Modal {
           p.url = v;
           this.refresh();
         })).addDropdown((d) => {
-          SOURCE_TYPES.forEach((s) => d.addOption(s, s));
+          SOURCE_TYPES.forEach((s) => {
+            d.addOption(s, s);
+          });
           d.setValue(p.source_type).onChange((v) => {
             p.source_type = v;
             this.refresh();
           });
         }).addDropdown((d) => {
-          LICENSES.forEach((l) => d.addOption(l, l));
+          LICENSES.forEach((l) => {
+            d.addOption(l, l);
+          });
           d.setValue(p.license).onChange((v) => {
             p.license = v;
             this.refresh();
@@ -1027,7 +1038,7 @@ async function importMapPayload(app, payload, opts) {
   new import_obsidian2.Notice(`\u2705 Forked "${payload.title ?? title}" into ${folder}/`);
   const f = app.vault.getAbstractFileByPath(canvasPath);
   if (f instanceof import_obsidian2.TFile)
-    app.workspace.getLeaf(true).openFile(f);
+    void app.workspace.getLeaf(true).openFile(f);
 }
 async function importForkedMap(app, baseUrl, mapId) {
   const notice = new import_obsidian2.Notice("Thunderegg: forking map\u2026", 0);
@@ -1166,64 +1177,68 @@ var ThundereggPlugin = class extends import_obsidian3.Plugin {
       })
     );
     this.addCommand({
-      id: "thunderegg-convert-file",
+      id: "convert-file",
       name: "Convert file",
       checkCallback: (checking) => {
         const f = this.app.workspace.getActiveFile();
-        const ok = !!f && CONVERTIBLE.has(f.extension.toLowerCase());
+        const ok = f instanceof import_obsidian3.TFile && CONVERTIBLE.has(f.extension.toLowerCase());
         if (ok && !checking)
-          this.convertFile(f);
+          void this.convertFile(f);
         return ok;
       }
     });
     this.addCommand({
-      id: "thunderegg-convert-clipboard",
+      id: "convert-clipboard",
       name: "Convert clipboard",
-      callback: () => this.convertClipboard()
+      callback: () => {
+        void this.convertClipboard();
+      }
     });
     this.addCommand({
-      id: "thunderegg-publish-canvas",
+      id: "publish-canvas",
       name: "Publish concept map",
       checkCallback: (checking) => {
         const f = this.app.workspace.getActiveFile();
-        const ok = !!f && f.extension.toLowerCase() === "canvas";
+        const ok = f instanceof import_obsidian3.TFile && f.extension.toLowerCase() === "canvas";
         if (ok && !checking)
-          this.openPublishModal(f);
+          void this.openPublishModal(f);
         return ok;
       }
     });
     this.addCommand({
-      id: "thunderegg-verify-map",
+      id: "verify-map",
       name: "Verify concept-map signature",
       checkCallback: (checking) => {
         const f = this.app.workspace.getActiveFile();
-        const ok = !!f && f.name.toLowerCase().endsWith(".distill.json");
+        const ok = f instanceof import_obsidian3.TFile && f.name.toLowerCase().endsWith(".distill.json");
         if (ok && !checking)
-          this.verifyMapFile(f);
+          void this.verifyMapFile(f);
         return ok;
       }
     });
     this.addCommand({
-      id: "thunderegg-fork-map-file",
+      id: "fork-map-file",
       name: "Fork map file into vault",
       checkCallback: (checking) => {
         const f = this.app.workspace.getActiveFile();
-        const ok = !!f && f.name.toLowerCase().endsWith(".distill.json");
+        const ok = f instanceof import_obsidian3.TFile && f.name.toLowerCase().endsWith(".distill.json");
         if (ok && !checking)
-          this.forkMapFile(f);
+          void this.forkMapFile(f);
         return ok;
       }
     });
     this.addCommand({
-      id: "thunderegg-copy-fork-receipt",
+      id: "copy-fork-receipt",
       name: "Copy fork receipt",
       checkCallback: (checking) => {
-        const ok = this.lastForkReceipt !== null;
-        if (ok && !checking) {
-          navigator.clipboard.writeText(this.lastForkReceipt);
+        const receipt = this.lastForkReceipt;
+        if (receipt === null)
+          return false;
+        if (!checking) {
+          void navigator.clipboard.writeText(receipt);
           new import_obsidian3.Notice("Thunderegg: fork receipt copied \u2014 paste it wherever you self-report.");
         }
-        return ok;
+        return true;
       }
     });
     this.registerObsidianProtocolHandler("distill-fork", (params) => {
@@ -1232,7 +1247,7 @@ var ThundereggPlugin = class extends import_obsidian3.Plugin {
         new import_obsidian3.Notice("Thunderegg: fork link is missing ?map=\u2026");
         return;
       }
-      importForkedMap(this.app, this.settings.serverBaseUrl, mapId);
+      void importForkedMap(this.app, this.settings.serverBaseUrl, mapId);
     });
     if (this.settings.refineryEnabled) {
       this.bootRefinery();
@@ -1254,7 +1269,7 @@ var ThundereggPlugin = class extends import_obsidian3.Plugin {
     );
     this.registerInterval(
       window.setInterval(() => {
-        this.checkThundereggAvailable().then(() => this.renderThundereggStatus());
+        void this.checkThundereggAvailable().then(() => this.renderThundereggStatus());
       }, 6e4)
     );
   }
@@ -1291,7 +1306,8 @@ var ThundereggPlugin = class extends import_obsidian3.Plugin {
      ═════════════════════════════════════════════════════════════════ */
   /** Resolve a vault-relative TFile to an absolute filesystem path. */
   absPath(file) {
-    const base = this.app.vault.adapter.getBasePath?.() ?? "";
+    const adapter = this.app.vault.adapter;
+    const base = adapter instanceof import_obsidian3.FileSystemAdapter ? adapter.getBasePath() : "";
     return path3.join(base, file.path);
   }
   /** Shell-escape a single argument (see core.ts). */
@@ -1314,12 +1330,12 @@ var ThundereggPlugin = class extends import_obsidian3.Plugin {
         await sleep(300);
         const md = this.app.vault.getAbstractFileByPath(mdPath);
         if (md instanceof import_obsidian3.TFile)
-          this.app.workspace.getLeaf(true).openFile(md);
+          void this.app.workspace.getLeaf(true).openFile(md);
       }
     } catch (e) {
       notice.hide();
       new import_obsidian3.Notice(
-        `\u274C Thunderegg failed: ${e?.message ?? e}. Is the Thunderegg app installed?`,
+        `\u274C Thunderegg failed: ${errMsg(e)}. Is the Thunderegg app installed?`,
         8e3
       );
       console.error("[Thunderegg]", e);
@@ -1365,7 +1381,9 @@ var ThundereggPlugin = class extends import_obsidian3.Plugin {
     let clipHtml = "";
     let clipText = "";
     try {
-      const electron = require("electron");
+      if (!window.require)
+        throw new Error("window.require unavailable");
+      const electron = window.require("electron");
       const cb = electron.clipboard ?? electron.remote?.clipboard;
       if (cb) {
         clipHtml = cb.readHTML?.() ?? "";
@@ -1401,7 +1419,7 @@ var ThundereggPlugin = class extends import_obsidian3.Plugin {
         `${this.shellQuote(this.settings.enginePath)} ${this.shellQuote(this.absPath(tempFile))}`,
         { env }
       );
-      await this.app.vault.delete(tempFile);
+      await this.app.fileManager.trashFile(tempFile);
       notice.hide();
       const mdRawPath = (0, import_obsidian3.normalizePath)(`${tempPath}.md`);
       await sleep(400);
@@ -1415,7 +1433,7 @@ var ThundereggPlugin = class extends import_obsidian3.Plugin {
         if (this.settings.openAfter) {
           const renamed = this.app.vault.getAbstractFileByPath(nicePath);
           if (renamed instanceof import_obsidian3.TFile) {
-            this.app.workspace.getLeaf(true).openFile(renamed);
+            void this.app.workspace.getLeaf(true).openFile(renamed);
           }
         }
       } else {
@@ -1426,10 +1444,10 @@ var ThundereggPlugin = class extends import_obsidian3.Plugin {
       try {
         const tf = this.app.vault.getAbstractFileByPath(tempPath);
         if (tf instanceof import_obsidian3.TFile)
-          await this.app.vault.delete(tf);
+          await this.app.fileManager.trashFile(tf);
       } catch {
       }
-      new import_obsidian3.Notice(`\u274C Clipboard conversion failed: ${e?.message ?? e}`, 8e3);
+      new import_obsidian3.Notice(`\u274C Clipboard conversion failed: ${errMsg(e)}`, 8e3);
       console.error("[Thunderegg]", e);
     }
   }
@@ -1442,7 +1460,7 @@ var ThundereggPlugin = class extends import_obsidian3.Plugin {
     try {
       canvas = JSON.parse(await this.app.vault.read(file));
     } catch (e) {
-      new import_obsidian3.Notice(`Thunderegg: could not read canvas \u2014 ${e?.message ?? e}`);
+      new import_obsidian3.Notice(`Thunderegg: could not read canvas \u2014 ${errMsg(e)}`);
       return;
     }
     const ctx = {
@@ -1483,7 +1501,7 @@ var ThundereggPlugin = class extends import_obsidian3.Plugin {
         ok ? 8e3 : 1e4
       );
     } catch (e) {
-      new import_obsidian3.Notice(`Thunderegg: verify failed \u2014 ${e?.message ?? e}`);
+      new import_obsidian3.Notice(`Thunderegg: verify failed \u2014 ${errMsg(e)}`);
     }
   }
   /** Fork a local .distill.json into Forked/, verifying its signature first. */
@@ -1521,7 +1539,7 @@ var ThundereggPlugin = class extends import_obsidian3.Plugin {
         await run();
       }
     } catch (e) {
-      new import_obsidian3.Notice(`Thunderegg: fork failed \u2014 ${e?.message ?? e}`);
+      new import_obsidian3.Notice(`Thunderegg: fork failed \u2014 ${errMsg(e)}`);
     }
   }
   /* ═════════════════════════════════════════════════════════════════
@@ -1624,7 +1642,7 @@ var ThundereggPlugin = class extends import_obsidian3.Plugin {
     const condenserRefs = this.settings.showCondenserLinks ? this.getReferencingCondensers(file.path) : [];
     if (!grade && bondCount2 === 0 && condenserRefs.length === 0)
       return;
-    const bar = createEl("div", { cls: "thunderegg-refinery-bar" });
+    const bar = createDiv({ cls: "thunderegg-refinery-bar" });
     if (grade && this.settings.showGradeBadges) {
       const m = GRADE_META[grade];
       if (m) {
@@ -1660,7 +1678,7 @@ var ThundereggPlugin = class extends import_obsidian3.Plugin {
           ev.preventDefault();
           const target = this.app.vault.getAbstractFileByPath(cPath);
           if (target instanceof import_obsidian3.TFile) {
-            this.app.workspace.getLeaf(false).openFile(target);
+            void this.app.workspace.getLeaf(false).openFile(target);
           }
         });
         if (i < condenserRefs.length - 1) {
@@ -1678,20 +1696,27 @@ var ThundereggPlugin = class extends import_obsidian3.Plugin {
   stripRefineryBar() {
     this.refineryBarEl?.remove();
     this.refineryBarEl = null;
-    document.querySelectorAll(".thunderegg-refinery-bar").forEach((el) => el.remove());
+    activeDocument.querySelectorAll(".thunderegg-refinery-bar").forEach((el) => el.remove());
   }
   /* ═════════════════════════════════════════════════════════════════
      Persistence
      ═════════════════════════════════════════════════════════════════ */
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    this.settings = Object.assign(
+      {},
+      DEFAULT_SETTINGS,
+      await this.loadData()
+    );
   }
   async saveSettings() {
     await this.saveData(this.settings);
   }
 };
 function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
+  return new Promise((r) => window.setTimeout(r, ms));
+}
+function errMsg(e) {
+  return e instanceof Error ? e.message : String(e);
 }
 var ThundereggSettingTab = class extends import_obsidian3.PluginSettingTab {
   constructor(app, plugin) {
@@ -1729,17 +1754,27 @@ var ThundereggSettingTab = class extends import_obsidian3.PluginSettingTab {
       })
     );
     new import_obsidian3.Setting(containerEl).setName("Refinery").setHeading();
-    const refineryDesc = containerEl.createEl("div", {
+    const refineryDesc = containerEl.createDiv({
       cls: "setting-item-description thunderegg-refinery-desc"
     });
     refineryDesc.createEl("p", {
       text: "The Refinery is Thunderegg\u2019s premium knowledge-management layer. It introduces four concepts:"
     });
     const ul = refineryDesc.createEl("ul");
-    ul.createEl("li").innerHTML = "<strong>Grades</strong> \u2014 note maturity: <em>Vapor \u2192 Distillate \u2192 Essence</em>";
-    ul.createEl("li").innerHTML = "<strong>Bonds</strong> \u2014 connections discovered via <code>[[wikilinks]]</code>";
-    ul.createEl("li").innerHTML = "<strong>Condensers</strong> \u2014 hub notes with many Bonds";
-    ul.createEl("li").innerHTML = "<strong>Fractions</strong> \u2014 folder-level grouping of related notes";
+    const liGrades = ul.createEl("li");
+    liGrades.createEl("strong", { text: "Grades" });
+    liGrades.appendText(" \u2014 note maturity: ");
+    liGrades.createEl("em", { text: "Vapor \u2192 Distillate \u2192 Essence" });
+    const liBonds = ul.createEl("li");
+    liBonds.createEl("strong", { text: "Bonds" });
+    liBonds.appendText(" \u2014 connections discovered via ");
+    liBonds.createEl("code", { text: "[[wikilinks]]" });
+    const liCondensers = ul.createEl("li");
+    liCondensers.createEl("strong", { text: "Condensers" });
+    liCondensers.appendText(" \u2014 hub notes with many Bonds");
+    const liFractions = ul.createEl("li");
+    liFractions.createEl("strong", { text: "Fractions" });
+    liFractions.appendText(" \u2014 folder-level grouping of related notes");
     new import_obsidian3.Setting(containerEl).setName("Enable Refinery").setDesc("Show Grade badges, Bond counts, and Condenser links in the UI.").addToggle(
       (t) => t.setValue(this.plugin.settings.refineryEnabled).onChange(async (v) => {
         this.plugin.settings.refineryEnabled = v;
@@ -1820,7 +1855,9 @@ var ThundereggSettingTab = class extends import_obsidian3.PluginSettingTab {
       fp ? `Maps are signed with device key ${fp} (Ed25519). The public key travels in each exported map's sidecar so others can verify you authored it.` : "An Ed25519 signing key is created on your first export, stored outside your vault. Its public key travels with each map so others can verify authorship."
     );
     new import_obsidian3.Setting(containerEl).setName("Default visibility").setDesc("Pre-selected visibility for new publishes.").addDropdown((d) => {
-      ["private", "followers", "public"].forEach((v) => d.addOption(v, v));
+      ["private", "followers", "public"].forEach((v) => {
+        d.addOption(v, v);
+      });
       d.setValue(this.plugin.settings.defaultVisibility).onChange(async (v) => {
         this.plugin.settings.defaultVisibility = v;
         await this.plugin.saveSettings();
@@ -1842,6 +1879,10 @@ var ThundereggSettingTab = class extends import_obsidian3.PluginSettingTab {
     const cta = containerEl.createEl("p", {
       cls: "setting-item-description"
     });
-    cta.innerHTML = 'Thunderegg converts 20+ file types to clean Markdown \u2014 100% on your Mac. Download the free app or unlock the full Refinery at <a href="https://distillmd.dev">distillmd.dev</a>.';
+    cta.appendText(
+      "Thunderegg converts 20+ file types to clean Markdown \u2014 100% on your Mac. Download the free app or unlock the full Refinery at "
+    );
+    cta.createEl("a", { href: "https://distillmd.dev", text: "distillmd.dev" });
+    cta.appendText(".");
   }
 };

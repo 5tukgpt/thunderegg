@@ -68,8 +68,10 @@ export async function publishArtifact(
   if (res.status < 200 || res.status >= 300) {
     let msg = `HTTP ${res.status}`;
     try {
-      const j = res.json;
-      if (j && typeof j.error === "string") msg = j.error;
+      const j: unknown = res.json;
+      if (j && typeof j === "object" && typeof (j as { error?: unknown }).error === "string") {
+        msg = (j as { error: string }).error;
+      }
     } catch { /* non-JSON error body */ }
     throw new Error(msg);
   }

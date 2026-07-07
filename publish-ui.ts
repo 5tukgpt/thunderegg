@@ -5,7 +5,7 @@
  */
 import { App, Modal, Notice, Setting, TFile, normalizePath } from "obsidian";
 import {
-  Canvas, DistillMapArtifact, PublishMeta, ProvenanceEntry, NodeKind,
+  Canvas, PublishMeta, ProvenanceEntry,
   transformCanvas, redactionScan, buildSidecar,
   checkForkMap, prepareForkImport, buildAttributionNote, buildForkReceipt,
   SOURCE_TYPES, LICENSES, VISIBILITIES, AI_ASSISTED, SUMMARY_MIN, SUMMARY_MAX,
@@ -95,14 +95,14 @@ export class PublishModal extends Modal {
     new Setting(contentEl)
       .setName("Visibility")
       .addDropdown((d) => {
-        VISIBILITIES.forEach((v) => d.addOption(v, v));
+        VISIBILITIES.forEach((v) => { d.addOption(v, v); });
         d.setValue(this.meta.visibility).onChange((v) => { this.meta.visibility = v as Visibility; this.refresh(); });
       });
 
     new Setting(contentEl)
       .setName("Map license")
       .addDropdown((d) => {
-        LICENSES.forEach((l) => d.addOption(l, l));
+        LICENSES.forEach((l) => { d.addOption(l, l); });
         d.setValue(this.meta.license).onChange((v) => { this.meta.license = v as License; this.refresh(); });
       });
 
@@ -110,7 +110,7 @@ export class PublishModal extends Modal {
       .setName("AI assistance")
       .setDesc("Disclose whether AI helped make this map (travels in the artifact).")
       .addDropdown((d) => {
-        AI_ASSISTED.forEach((a) => d.addOption(a, a));
+        AI_ASSISTED.forEach((a) => { d.addOption(a, a); });
         d.setValue(this.meta.ai_assisted ?? "none").onChange((v) => { this.meta.ai_assisted = v as AiAssisted; this.refresh(); });
       });
 
@@ -125,8 +125,8 @@ export class PublishModal extends Modal {
           .setName(`Source #${i + 1}`)
           .addText((t) => t.setPlaceholder("Title").setValue(p.source_title).onChange((v) => { p.source_title = v; this.refresh(); }))
           .addText((t) => t.setPlaceholder("https://…").setValue(p.url).onChange((v) => { p.url = v; this.refresh(); }))
-          .addDropdown((d) => { SOURCE_TYPES.forEach((s) => d.addOption(s, s)); d.setValue(p.source_type).onChange((v) => { p.source_type = v as SourceType; this.refresh(); }); })
-          .addDropdown((d) => { LICENSES.forEach((l) => d.addOption(l, l)); d.setValue(p.license).onChange((v) => { p.license = v as License; this.refresh(); }); })
+          .addDropdown((d) => { SOURCE_TYPES.forEach((s) => { d.addOption(s, s); }); d.setValue(p.source_type).onChange((v) => { p.source_type = v as SourceType; this.refresh(); }); })
+          .addDropdown((d) => { LICENSES.forEach((l) => { d.addOption(l, l); }); d.setValue(p.license).onChange((v) => { p.license = v as License; this.refresh(); }); })
           .addExtraButton((b) => b.setIcon("trash").setTooltip("Remove").onClick(() => {
             if (this.meta.provenance.length > 1) { this.meta.provenance.splice(i, 1); renderProv(); this.refresh(); }
           }));
@@ -316,7 +316,7 @@ export async function importMapPayload(
   for (const w of check.warnings) new Notice(`⚠️ ${w}`, 8000);
   new Notice(`✅ Forked "${payload.title ?? title}" into ${folder}/`);
   const f = app.vault.getAbstractFileByPath(canvasPath);
-  if (f instanceof TFile) app.workspace.getLeaf(true).openFile(f);
+  if (f instanceof TFile) void app.workspace.getLeaf(true).openFile(f);
 }
 
 export async function importForkedMap(app: App, baseUrl: string, mapId: string): Promise<void> {

@@ -1,8 +1,8 @@
 {
   "id": "thunderegg",
   "name": "Thunderegg",
-  "version": "0.2.3",
-  "minAppVersion": "1.4.0",
+  "version": "0.2.4",
+  "minAppVersion": "1.6.6",
   "description": "Convert any attachment to Markdown on-device, plus the Refinery — track note maturity (Grades), wikilink connections (Bonds), and hub notes (Condensers). Powered by the Thunderegg engine.",
   "author": "Thunderegg",
   "authorUrl": "https://github.com/5tukgpt",
