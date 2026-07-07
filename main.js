@@ -1701,7 +1701,6 @@ var ThundereggSettingTab = class extends import_obsidian3.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    new import_obsidian3.Setting(containerEl).setName("Thunderegg").setHeading();
     containerEl.createEl("p", {
       text: "Converts attachments on-device via the Thunderegg engine. The Refinery adds note-maturity Grades, wikilink Bonds, and hub-note Condensers to your vault.",
       cls: "setting-item-description"
@@ -1839,7 +1838,7 @@ var ThundereggSettingTab = class extends import_obsidian3.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Get Thunderegg").setHeading();
+    new import_obsidian3.Setting(containerEl).setName("Get the app").setHeading();
     const cta = containerEl.createEl("p", {
       cls: "setting-item-description"
     });

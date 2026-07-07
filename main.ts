@@ -776,7 +776,6 @@ class ThundereggSettingTab extends PluginSettingTab {
     containerEl.empty();
 
     /* ── Header ── */
-    new Setting(containerEl).setName("Thunderegg").setHeading();
     containerEl.createEl("p", {
       text:
         "Converts attachments on-device via the Thunderegg engine. " +
@@ -1015,7 +1014,7 @@ class ThundereggSettingTab extends PluginSettingTab {
     /* ────────────────────────────────────────────────────────────── */
     /*  CTA                                                          */
     /* ────────────────────────────────────────────────────────────── */
-    new Setting(containerEl).setName("Get Thunderegg").setHeading();
+    new Setting(containerEl).setName("Get the app").setHeading();
     const cta = containerEl.createEl("p", {
       cls: "setting-item-description",
     });
