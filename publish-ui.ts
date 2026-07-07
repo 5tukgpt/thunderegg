@@ -140,8 +140,6 @@ export class PublishModal extends Modal {
     contentEl.createEl("h3", { text: "Review" });
     this.issuesEl = contentEl.createDiv({ cls: "thunderegg-publish-issues" });
     this.previewEl = contentEl.createEl("pre", { cls: "thunderegg-publish-preview" });
-    this.previewEl.style.maxHeight = "240px";
-    this.previewEl.style.overflow = "auto";
 
     const btns = new Setting(contentEl);
     btns.addButton((b) => b.setButtonText("Copy JSON").onClick(async () => {

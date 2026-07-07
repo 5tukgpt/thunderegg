@@ -366,7 +366,7 @@ export default class ThundereggPlugin extends Plugin {
     let clipHtml = "";
     let clipText = "";
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      // eslint-disable-next-line @typescript-eslint/no-var-requires -- Electron's clipboard is only reachable via require() at runtime in Obsidian's desktop shell; there is no ESM import for it.
       const electron = require("electron");
       const cb = electron.clipboard ?? electron.remote?.clipboard;
       if (cb) {
@@ -776,7 +776,7 @@ class ThundereggSettingTab extends PluginSettingTab {
     containerEl.empty();
 
     /* ── Header ── */
-    containerEl.createEl("h2", { text: "Thunderegg" });
+    new Setting(containerEl).setName("Thunderegg").setHeading();
     containerEl.createEl("p", {
       text:
         "Converts attachments on-device via the Thunderegg engine. " +
@@ -788,7 +788,7 @@ class ThundereggSettingTab extends PluginSettingTab {
     /* ────────────────────────────────────────────────────────────── */
     /*  CONVERSION                                                   */
     /* ────────────────────────────────────────────────────────────── */
-    containerEl.createEl("h3", { text: "Conversion" });
+    new Setting(containerEl).setName("Conversion").setHeading();
 
     new Setting(containerEl)
       .setName("Engine path")
@@ -830,7 +830,7 @@ class ThundereggSettingTab extends PluginSettingTab {
     /* ────────────────────────────────────────────────────────────── */
     /*  REFINERY                                                     */
     /* ────────────────────────────────────────────────────────────── */
-    containerEl.createEl("h3", { text: "Refinery" });
+    new Setting(containerEl).setName("Refinery").setHeading();
 
     const refineryDesc = containerEl.createEl("div", {
       cls: "setting-item-description thunderegg-refinery-desc",
@@ -933,7 +933,7 @@ class ThundereggSettingTab extends PluginSettingTab {
     /* ────────────────────────────────────────────────────────────── */
     /*  PUBLISH & COMMUNITY                                          */
     /* ────────────────────────────────────────────────────────────── */
-    containerEl.createEl("h3", { text: "Publish & Community" });
+    new Setting(containerEl).setName("Publish & Community").setHeading();
     containerEl.createEl("p", {
       cls: "setting-item-description",
       text:
@@ -1015,7 +1015,7 @@ class ThundereggSettingTab extends PluginSettingTab {
     /* ────────────────────────────────────────────────────────────── */
     /*  CTA                                                          */
     /* ────────────────────────────────────────────────────────────── */
-    containerEl.createEl("h3", { text: "Get Thunderegg" });
+    new Setting(containerEl).setName("Get Thunderegg").setHeading();
     const cta = containerEl.createEl("p", {
       cls: "setting-item-description",
     });

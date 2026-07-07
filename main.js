@@ -907,8 +907,6 @@ var PublishModal = class extends import_obsidian2.Modal {
     contentEl.createEl("h3", { text: "Review" });
     this.issuesEl = contentEl.createDiv({ cls: "thunderegg-publish-issues" });
     this.previewEl = contentEl.createEl("pre", { cls: "thunderegg-publish-preview" });
-    this.previewEl.style.maxHeight = "240px";
-    this.previewEl.style.overflow = "auto";
     const btns = new import_obsidian2.Setting(contentEl);
     btns.addButton((b) => b.setButtonText("Copy JSON").onClick(async () => {
       await navigator.clipboard.writeText(this.previewEl.getText());
@@ -1703,12 +1701,12 @@ var ThundereggSettingTab = class extends import_obsidian3.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "Thunderegg" });
+    new import_obsidian3.Setting(containerEl).setName("Thunderegg").setHeading();
     containerEl.createEl("p", {
       text: "Converts attachments on-device via the Thunderegg engine. The Refinery adds note-maturity Grades, wikilink Bonds, and hub-note Condensers to your vault.",
       cls: "setting-item-description"
     });
-    containerEl.createEl("h3", { text: "Conversion" });
+    new import_obsidian3.Setting(containerEl).setName("Conversion").setHeading();
     new import_obsidian3.Setting(containerEl).setName("Engine path").setDesc("Full path to the Thunderegg convert.sh helper script.").addText(
       (t) => t.setPlaceholder(DEFAULT_SETTINGS.enginePath).setValue(this.plugin.settings.enginePath).onChange(async (v) => {
         this.plugin.settings.enginePath = v.trim();
@@ -1731,7 +1729,7 @@ var ThundereggSettingTab = class extends import_obsidian3.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    containerEl.createEl("h3", { text: "Refinery" });
+    new import_obsidian3.Setting(containerEl).setName("Refinery").setHeading();
     const refineryDesc = containerEl.createEl("div", {
       cls: "setting-item-description thunderegg-refinery-desc"
     });
@@ -1791,7 +1789,7 @@ var ThundereggSettingTab = class extends import_obsidian3.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    containerEl.createEl("h3", { text: "Publish & Community" });
+    new import_obsidian3.Setting(containerEl).setName("Publish & Community").setHeading();
     containerEl.createEl("p", {
       cls: "setting-item-description",
       text: "Publish a Canvas as a concept map to distillmd.dev. Nothing is sent unless you explicitly publish; your vault never leaves your machine."
@@ -1841,7 +1839,7 @@ var ThundereggSettingTab = class extends import_obsidian3.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    containerEl.createEl("h3", { text: "Get Thunderegg" });
+    new import_obsidian3.Setting(containerEl).setName("Get Thunderegg").setHeading();
     const cta = containerEl.createEl("p", {
       cls: "setting-item-description"
     });

@@ -138,3 +138,8 @@
 .thunderegg-refinery-desc li {
   margin-bottom: 2px;
 }
+
+.thunderegg-publish-preview {
+  max-height: 240px;
+  overflow: auto;
+}
