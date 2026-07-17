@@ -66,6 +66,11 @@ var CONVERTIBLE = /* @__PURE__ */ new Set([
 function shellQuote(s) {
   return "'" + s.replace(/'/g, "'\\''") + "'";
 }
+var NO_OCR_TOKEN = "DISTILL_NO_OCR";
+function isNoOcrError(e) {
+  const stderr = e?.stderr;
+  return typeof stderr === "string" && stderr.includes(NO_OCR_TOKEN);
+}
 var GRADE_META = {
   vapor: { label: "Vapor", icon: "\u2601\uFE0F", css: "vapor" },
   // ☁️
@@ -1334,6 +1339,13 @@ var ThundereggPlugin = class extends import_obsidian3.Plugin {
       }
     } catch (e) {
       notice.hide();
+      if (isNoOcrError(e)) {
+        new import_obsidian3.Notice(
+          `Thunderegg couldn't read "${file.name}" \u2014 on-device OCR isn't available. Reinstall the Thunderegg app to enable image OCR.`,
+          9e3
+        );
+        return;
+      }
       new import_obsidian3.Notice(
         `\u274C Thunderegg failed: ${errMsg(e)}. Is the Thunderegg app installed?`,
         8e3
@@ -1357,6 +1369,7 @@ var ThundereggPlugin = class extends import_obsidian3.Plugin {
     }
     const notice = new import_obsidian3.Notice(`Thunderegg: converting ${targets.length} files\u2026`, 0);
     let ok = 0;
+    let noOcr = 0;
     for (const t of targets) {
       try {
         const env = { ...process.env };
@@ -1368,11 +1381,17 @@ var ThundereggPlugin = class extends import_obsidian3.Plugin {
         );
         ok++;
       } catch (e) {
+        if (isNoOcrError(e))
+          noOcr++;
         console.error("[Thunderegg]", t.path, e);
       }
     }
     notice.hide();
-    new import_obsidian3.Notice(`\u2705 Thunderegg: converted ${ok}/${targets.length} files.`);
+    let msg = `\u2705 Thunderegg: converted ${ok}/${targets.length} files.`;
+    if (noOcr > 0) {
+      msg += ` ${noOcr} image(s) need on-device OCR \u2014 reinstall the Thunderegg app to enable it.`;
+    }
+    new import_obsidian3.Notice(msg, noOcr > 0 ? 1e4 : void 0);
   }
   /* ═════════════════════════════════════════════════════════════════
      Clipboard conversion

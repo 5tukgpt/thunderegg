@@ -9,7 +9,7 @@ import * as os from "os";
 import * as path from "path";
 import * as fs from "fs";
 import {
-  CONVERTIBLE, GRADE_META, shellQuote, normalizeGrade,
+  CONVERTIBLE, GRADE_META, shellQuote, normalizeGrade, isNoOcrError,
   BondGraph, emptyBondGraph, buildBondGraph,
   bondCount, isCondenser, referencingCondensers,
 } from "./core";
@@ -334,6 +334,16 @@ export default class ThundereggPlugin extends Plugin {
       }
     } catch (e) {
       notice.hide();
+      // No on-device OCR: the engine is installed and ran, it just cannot read images,
+      // so "Is the Thunderegg app installed?" would send the user down the wrong path.
+      if (isNoOcrError(e)) {
+        new Notice(
+          `Thunderegg couldn't read "${file.name}" — on-device OCR isn't available. ` +
+          `Reinstall the Thunderegg app to enable image OCR.`,
+          9000,
+        );
+        return;
+      }
       new Notice(
         `❌ Thunderegg failed: ${errMsg(e)}. Is the Thunderegg app installed?`,
         8000,
@@ -360,6 +370,7 @@ export default class ThundereggPlugin extends Plugin {
 
     const notice = new Notice(`Thunderegg: converting ${targets.length} files…`, 0);
     let ok = 0;
+    let noOcr = 0;
 
     for (const t of targets) {
       try {
@@ -371,12 +382,19 @@ export default class ThundereggPlugin extends Plugin {
         );
         ok++;
       } catch (e) {
+        // Missing OCR must NOT short-circuit the batch: it only stops images, so every
+        // other file still converts. Count them and name the remedy once, below.
+        if (isNoOcrError(e)) noOcr++;
         console.error("[Thunderegg]", t.path, e);
       }
     }
 
     notice.hide();
-    new Notice(`✅ Thunderegg: converted ${ok}/${targets.length} files.`);
+    let msg = `✅ Thunderegg: converted ${ok}/${targets.length} files.`;
+    if (noOcr > 0) {
+      msg += ` ${noOcr} image(s) need on-device OCR — reinstall the Thunderegg app to enable it.`;
+    }
+    new Notice(msg, noOcr > 0 ? 10000 : undefined);
   }
 
   /* ═════════════════════════════════════════════════════════════════

@@ -21,6 +21,24 @@ export function shellQuote(s: string): string {
   return "'" + s.replace(/'/g, "'\\''") + "'";
 }
 
+/**
+ * Token the engine prints to stderr when it has no on-device OCR binary to read an
+ * image: it then exits non-zero and writes no .md, so the image was never looked at.
+ * Spelled DISTILL_* because it is the engine's wire contract (convert.sh), not our
+ * brand — renaming it here silently stops the detection below from ever matching.
+ */
+export const NO_OCR_TOKEN = "DISTILL_NO_OCR";
+
+/**
+ * True when a failed engine call reports it had no OCR to read an image — a different
+ * failure from a missing or broken engine, and the only one with a user-facing remedy.
+ * `promisify(exec)` rejects with an Error carrying the child's stderr as a string.
+ */
+export function isNoOcrError(e: unknown): boolean {
+  const stderr = (e as { stderr?: unknown } | null | undefined)?.stderr;
+  return typeof stderr === "string" && stderr.includes(NO_OCR_TOKEN);
+}
+
 /* ── Grades ───────────────────────────────────────────────────────── */
 
 export interface GradeMeta {
