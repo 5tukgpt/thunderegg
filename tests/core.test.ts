@@ -36,22 +36,27 @@ describe("shellQuote", () => {
 });
 
 describe("normalizeGrade", () => {
-  it("accepts the three valid grades", () => {
-    for (const g of ["vapor", "distillate", "essence"]) {
+  it("accepts the rock ladder + synthesis (what the engine writes)", () => {
+    for (const g of ["blank", "rough", "polished", "crystal", "gem", "synthesis"]) {
       expect(normalizeGrade(g)).toBe(g);
     }
   });
 
-  it("rejects invalid or non-string values", () => {
+  it("canonicalizes legacy still-ladder values instead of rejecting them", () => {
+    expect(normalizeGrade("vapor")).toBe("blank");
+    expect(normalizeGrade("essence")).toBe("gem");
+    expect(normalizeGrade("Vapor")).toBe("blank"); // case-insensitive, like canon_grade
+  });
+
+  it("rejects unknown or non-string values", () => {
     expect(normalizeGrade("gold")).toBeNull();
-    expect(normalizeGrade("Vapor")).toBeNull(); // case-sensitive
     expect(normalizeGrade(undefined)).toBeNull();
     expect(normalizeGrade(3)).toBeNull();
     expect(normalizeGrade(["vapor"])).toBeNull();
   });
 
   it("every valid grade has display metadata", () => {
-    for (const g of ["vapor", "distillate", "essence"]) {
+    for (const g of ["blank", "rough", "polished", "crystal", "gem", "synthesis"]) {
       expect(GRADE_META[g]).toBeDefined();
       expect(GRADE_META[g].label.length).toBeGreaterThan(0);
     }

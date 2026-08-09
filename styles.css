@@ -40,28 +40,58 @@
   white-space: nowrap;
 }
 
-/* Vapor — grey, raw / unprocessed */
-.thunderegg-grade-vapor {
+/* The rock ladder (engine authority: promote.py GRADES). Legacy still-ladder values
+   canonicalize in core.ts normalizeGrade, so only these six classes ever render. */
+
+/* Blank — grey, unprocessed */
+.thunderegg-grade-blank {
   background: rgba(139, 139, 139, 0.14);
   color: var(--text-muted);
 }
 
-/* Distillate — blue, reviewed */
-.thunderegg-grade-distillate {
+/* Rough — warm brown, first shaping */
+.thunderegg-grade-rough {
+  background: rgba(180, 130, 80, 0.16);
+  color: #a06b3c;
+}
+.theme-dark .thunderegg-grade-rough {
+  color: #c9915e;
+}
+
+/* Polished — blue, reviewed */
+.thunderegg-grade-polished {
   background: rgba(91, 155, 213, 0.16);
   color: #5b9bd5;
 }
-.theme-dark .thunderegg-grade-distillate {
+.theme-dark .thunderegg-grade-polished {
   color: #7bb8e8;
 }
 
-/* Essence — purple, evergreen */
-.thunderegg-grade-essence {
+/* Crystal — indigo, trusted */
+.thunderegg-grade-crystal {
+  background: rgba(99, 102, 241, 0.15);
+  color: #6366f1;
+}
+.theme-dark .thunderegg-grade-crystal {
+  color: #8b8df5;
+}
+
+/* Gem — purple, evergreen */
+.thunderegg-grade-gem {
   background: rgba(168, 85, 247, 0.14);
   color: #9333ea;
 }
-.theme-dark .thunderegg-grade-essence {
+.theme-dark .thunderegg-grade-gem {
   color: #c084fc;
+}
+
+/* Synthesis — teal, generated map pages (00-Maps) */
+.thunderegg-grade-synthesis {
+  background: rgba(20, 184, 166, 0.14);
+  color: #0d9488;
+}
+.theme-dark .thunderegg-grade-synthesis {
+  color: #2dd4bf;
 }
 
 /* ── Bond count ───────────────────────────────────────────────────── */

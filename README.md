@@ -1,6 +1,6 @@
 # Thunderegg — Obsidian Plugin
 
-Convert any attachment in your vault — PDF, Word, Excel, PowerPoint, email, image — to clean Markdown **with YAML frontmatter**, 100% on your Mac. Plus the **Refinery**: track note maturity, discover connections, and surface hub notes automatically.
+Convert any attachment in your vault — PDF, Word, Excel, PowerPoint, email, image, **even meeting recordings (transcribed on-device)** — to clean Markdown **with YAML frontmatter**, 100% on your Mac. Plus the **Refinery**: track note maturity, discover connections, and surface hub notes automatically. Everything is free.
 
 ## Features
 
@@ -12,16 +12,16 @@ Convert any attachment in your vault — PDF, Word, Excel, PowerPoint, email, im
   - `Thunderegg: Convert clipboard` — paste clipboard content (HTML or text), run it through Thunderegg, and create a new note
 - **Status bar:** live indicator showing whether the Thunderegg engine is available (🟢 Ready / 🔴 Unavailable)
 - Output is written as `<file>.md` next to the source, with `title/source/type/created/tags` frontmatter.
+- **Recordings become meeting summaries:** drop an audio or video file (mp3, m4a, wav, aiff, aac, flac, opus, mp4, mov, m4v) and the engine transcribes it on-device and writes a structured summary — action items, decisions, notable quotes. Transcription takes a few minutes per recording; nothing is uploaded.
 
-### Refinery (premium)
-Enable the Refinery in settings to unlock Thunderegg's knowledge-management layer. It adds four concepts:
+### Refinery (free, like everything else)
+Enable the Refinery in settings for Thunderegg's knowledge-management layer. It adds three concepts:
 
 | Concept       | What it is                                             |
 |---------------|--------------------------------------------------------|
-| **Grades**    | Note maturity: *Vapor* → *Distillate* → *Essence*     |
+| **Grades**    | Note maturity: *Blank* → *Rough* → *Polished* → *Crystal* → *Gem* |
 | **Bonds**     | Connections discovered via `[[wikilinks]]`              |
 | **Condensers**| Hub notes — notes whose bond count exceeds a threshold |
-| **Fractions** | Folder-level grouping of related notes                 |
 
 When Refinery is enabled:
 - A **Refinery info bar** appears at the top of each note showing the note's Grade badge, Bond count, Condenser flag, and links to any Condensers that reference it.
@@ -32,17 +32,21 @@ When Refinery is enabled:
 Add a `grade` field to any note's YAML frontmatter:
 ```yaml
 ---
-grade: vapor
+grade: rough
 ---
 ```
-Valid values: `vapor`, `distillate`, `essence`. The plugin reads Obsidian's metadata cache for instant display.
+Valid values: `blank`, `rough`, `polished`, `crystal`, `gem` (plus `synthesis` on generated map
+pages). Notes from before the 2026-07 rename (`vapor`, `crude`, `distillate`, `refined`,
+`essence`) are read forever and shown under their new names. The plugin reads Obsidian's
+metadata cache for instant display.
 
 ## Requirements
 - **macOS** (desktop-only — uses the on-device Thunderegg engine).
 - The **Thunderegg app** (or its helper scripts) installed, which provides
   `~/Library/Application Support/MarkItDownDroplet/convert.sh`. The engine path is
   configurable in plugin settings.
-- Image OCR needs Xcode Command Line Tools (`xcode-select --install`).
+- Image OCR uses the Apple Vision `ocr` helper that ships with the Thunderegg app. If image
+  conversion fails with an OCR message, reinstall the Thunderegg app — that restores the helper.
 
 ## Settings
 
@@ -60,10 +64,21 @@ Valid values: `vapor`, `distillate`, `essence`. The plugin reads Obsidian's meta
 
 ## How it works
 The plugin shells out to the local Thunderegg engine via Node's `child_process`
-(allowed for desktop-only plugins). Nothing is uploaded — conversion is entirely
-on-device. Frontmatter can be toggled off in settings (passes `DISTILL_FRONTMATTER=0`).
+(allowed for desktop-only plugins). Conversion and transcription are entirely on-device —
+nothing is uploaded to convert. Frontmatter can be toggled off in settings (passes
+`DISTILL_FRONTMATTER=0`); the plugin also passes your vault's path (`DISTILL_VAULT_PATH`)
+so the engine's bond discovery links against *this* vault.
 
 The Refinery reads from Obsidian's `metadataCache.resolvedLinks` to build the bond graph — no custom file parsing, no background workers.
+
+### Publish & Community (optional, off by default — and the one feature that CAN upload)
+The plugin can publish an Obsidian **Canvas** as a signed concept map to a server you
+configure (Settings → Publish & Community), and import maps others share via
+`obsidian://distill-fork` links. This is the plugin's **only** network feature: nothing is
+ever sent unless you explicitly run a Publish command, publishing sends only the selected
+Canvas (after a redaction scan for blocked tags), and the device token is stored outside
+your vault. The hosted community server is not currently online; the feature works against
+any server implementing the protocol.
 
 ## Build from source
 ```sh
@@ -78,15 +93,22 @@ Copy `manifest.json`, `main.js`, and `styles.css` into:
 ```
 Then enable **Thunderegg** in Settings → Community plugins.
 
-## Submitting to the community catalog
-1. Push this folder to a public GitHub repo.
-2. Tag a release whose assets include `manifest.json`, `main.js`, and `styles.css`.
-3. PR to [`obsidianmd/obsidian-releases`](https://github.com/obsidianmd/obsidian-releases) adding the plugin to `community-plugins.json`.
+## Releasing an update (the plugin is already in the community catalog)
+The plugin is listed in the official Obsidian directory as `thunderegg`. To ship an update:
+1. Bump `version` in `manifest.json` (and `versions.json` if `minAppVersion` changed).
+2. `npm test && npm run build`.
+3. Tag a release named exactly the version, with `manifest.json`, `main.js`, and `styles.css`
+   as assets — Obsidian serves updates from the GitHub release, no new catalog PR needed.
+   ⚠️ This step has been forgotten twice: a fix committed to the repo reaches nobody until a
+   release is cut under a bumped version.
 
 > Note: Obsidian's review guidelines require desktop-only plugins that run shell
 > commands to clearly disclose it. The description and this README state that the
 > plugin executes a local helper script; keep that disclosure if you edit copy.
 
 ## Status
-v0.2.0 — builds clean, type-checks clean. Adds Refinery awareness, clipboard conversion,
-and status-bar indicators on top of the original v0.1.0 conversion features.
+v0.2.5 — listed in the official Obsidian community directory. On top of the v0.1.0
+conversion features: the Refinery (rock-ladder grades with permanent legacy-name reads),
+audio/video → on-device meeting summaries, `.doc`/`.rtf` support, vault-aware bond
+discovery (`DISTILL_VAULT_PATH`), clipboard conversion, status-bar indicators, and the
+Canvas publish/verify/fork surface (disclosed above).

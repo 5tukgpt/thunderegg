@@ -37,10 +37,10 @@ Drop a real attachment into the vault (e.g. copy a PDF into the vault folder).
 2. Status bar should now show Grade / Bond / Condenser info when a .md file is active.
 
 ### Grade badges
-1. Create a note with `grade: vapor` in the frontmatter.
-2. Open it → expect a grey "☁️ Vapor" badge in both the Refinery info bar (top of note) and the status bar.
-3. Change to `grade: distillate` → blue "💧 Distillate" badge.
-4. Change to `grade: essence` → purple "💎 Essence" badge.
+1. Create a note with `grade: rough` in the frontmatter.
+2. Open it → expect a brown "🪨 Rough" badge in both the Refinery info bar (top of note) and the status bar.
+3. Change to `grade: crystal` → indigo "💠 Crystal" badge; `grade: gem` → purple "💎 Gem" badge.
+4. Legacy read contract: `grade: vapor` → grey "⬜ Blank" badge; `grade: essence` → "💎 Gem".
 5. Remove the `grade` field → badge disappears.
 
 ### Bond counts
@@ -76,7 +76,8 @@ Drop a real attachment into the vault (e.g. copy a PDF into the vault folder).
 ## If it fails
 - "Thunderegg failed… Is the Thunderegg app installed?" → the engine isn't at the configured path.
   Install the Thunderegg app (or point Engine path at a valid `convert.sh`).
-- Images don't convert → Xcode Command Line Tools missing (`xcode-select --install`).
+- Images don't convert with an OCR message → the Apple Vision `ocr` helper that ships with the
+  Thunderegg app is missing; reinstall the Thunderegg app to restore it.
 - Refinery bar doesn't appear → ensure the Refinery toggle is on and the active file is `.md`.
 
 ## Pre-submission checklist

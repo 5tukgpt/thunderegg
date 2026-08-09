@@ -9,7 +9,7 @@ import * as os from "os";
 import * as path from "path";
 import * as fs from "fs";
 import {
-  CONVERTIBLE, GRADE_META, shellQuote, normalizeGrade, isNoOcrError,
+  CONVERTIBLE, GRADE_META, shellQuote, normalizeGrade, isNoOcrError, isAudioVideo,
   BondGraph, emptyBondGraph, buildBondGraph,
   bondCount, isCondenser, referencingCondensers,
 } from "./core";
@@ -80,6 +80,10 @@ const DEFAULT_SETTINGS: ThundereggSettings = {
   showGradeBadges: true,
   showBondCounts: true,
   showCondenserLinks: true,
+  // The community publish server has NOT been redeployed since the Thunderegg rebrand — this
+  // legacy host currently 404s, and thunderegg.ai is a static site with no /api. Deliberately
+  // left pointing at the legacy zone (a clean HTTP failure) rather than re-pointed (a JSON
+  // parse failure against marketing HTML). Revisit when/if the publish backend ships.
   serverBaseUrl: "https://distillmd.dev",
   blockedZonesCsv: "#health, #work, #client, #private",
   defaultVisibility: "private",
@@ -313,16 +317,38 @@ export default class ThundereggPlugin extends Plugin {
     return shellQuote(s);
   }
 
+  /**
+   * Environment for an engine call. DISTILL_VAULT_PATH tells the engine which vault to enrich
+   * against — convert.sh's own comment names this plugin as the setter; without it the engine
+   * falls back to the Mac app's configured vault and writes bonds/wikilinks that resolve in
+   * SOMEONE ELSE'S vault, not this one. maxBuffer is raised because a transcription run can
+   * chat well past exec's 1 MB default over the minutes a recording takes.
+   */
+  private engineEnv(): Record<string, string> {
+    const env: Record<string, string> = { ...process.env } as Record<string, string>;
+    if (!this.settings.frontmatter) env["DISTILL_FRONTMATTER"] = "0";
+    const adapter = this.app.vault.adapter;
+    if (adapter instanceof FileSystemAdapter) env["DISTILL_VAULT_PATH"] = adapter.getBasePath();
+    return env;
+  }
+
+  private static readonly ENGINE_MAX_BUFFER = 10 * 1024 * 1024;
+
   async convertFile(file: TFile): Promise<void> {
     const engine = this.settings.enginePath;
     const full   = this.absPath(file);
-    const notice = new Notice(`Thunderegg: converting ${file.name}…`, 0);
+    const notice = new Notice(
+      isAudioVideo(file.extension)
+        ? `Thunderegg: transcribing ${file.name} — recordings take a few minutes…`
+        : `Thunderegg: converting ${file.name}…`,
+      0,
+    );
 
     try {
-      const env: Record<string, string> = { ...process.env } as Record<string, string>;
-      if (!this.settings.frontmatter) env["DISTILL_FRONTMATTER"] = "0";
+      const env = this.engineEnv();
 
-      await execAsync(`${this.shellQuote(engine)} ${this.shellQuote(full)}`, { env });
+      await execAsync(`${this.shellQuote(engine)} ${this.shellQuote(full)}`,
+        { env, maxBuffer: ThundereggPlugin.ENGINE_MAX_BUFFER });
       notice.hide();
       new Notice(`✅ Thunderegg: created ${file.name}.md`);
 
@@ -374,11 +400,10 @@ export default class ThundereggPlugin extends Plugin {
 
     for (const t of targets) {
       try {
-        const env: Record<string, string> = { ...process.env } as Record<string, string>;
-        if (!this.settings.frontmatter) env["DISTILL_FRONTMATTER"] = "0";
+        const env = this.engineEnv();
         await execAsync(
           `${this.shellQuote(this.settings.enginePath)} ${this.shellQuote(this.absPath(t))}`,
-          { env },
+          { env, maxBuffer: ThundereggPlugin.ENGINE_MAX_BUFFER },
         );
         ok++;
       } catch (e) {
@@ -441,11 +466,10 @@ export default class ThundereggPlugin extends Plugin {
       const tempFile = this.app.vault.getAbstractFileByPath(tempPath);
       if (!(tempFile instanceof TFile)) throw new Error("Could not create temp file");
 
-      const env: Record<string, string> = { ...process.env } as Record<string, string>;
-      if (!this.settings.frontmatter) env["DISTILL_FRONTMATTER"] = "0";
+      const env = this.engineEnv();
       await execAsync(
         `${this.shellQuote(this.settings.enginePath)} ${this.shellQuote(this.absPath(tempFile))}`,
-        { env },
+        { env, maxBuffer: ThundereggPlugin.ENGINE_MAX_BUFFER },
       );
 
       // Remove the temporary source file
@@ -885,14 +909,14 @@ class ThundereggSettingTab extends PluginSettingTab {
     });
     refineryDesc.createEl("p", {
       text:
-        "The Refinery is Thunderegg’s premium knowledge-management layer. " +
-        "It introduces four concepts:",
+        "The Refinery is Thunderegg’s knowledge-management layer — free, like everything else. " +
+        "It introduces three concepts:",
     });
     const ul = refineryDesc.createEl("ul");
     const liGrades = ul.createEl("li");
     liGrades.createEl("strong", { text: "Grades" });
     liGrades.appendText(" — note maturity: ");
-    liGrades.createEl("em", { text: "Vapor → Distillate → Essence" });
+    liGrades.createEl("em", { text: "Blank → Rough → Polished → Crystal → Gem" });
     const liBonds = ul.createEl("li");
     liBonds.createEl("strong", { text: "Bonds" });
     liBonds.appendText(" — connections discovered via ");
@@ -900,9 +924,6 @@ class ThundereggSettingTab extends PluginSettingTab {
     const liCondensers = ul.createEl("li");
     liCondensers.createEl("strong", { text: "Condensers" });
     liCondensers.appendText(" — hub notes with many Bonds");
-    const liFractions = ul.createEl("li");
-    liFractions.createEl("strong", { text: "Fractions" });
-    liFractions.appendText(" — folder-level grouping of related notes");
 
     new Setting(containerEl)
       .setName("Enable Refinery")
@@ -991,8 +1012,8 @@ class ThundereggSettingTab extends PluginSettingTab {
     containerEl.createEl("p", {
       cls: "setting-item-description",
       text:
-        "Publish a Canvas as a concept map to distillmd.dev. Nothing is sent unless " +
-        "you explicitly publish; your vault never leaves your machine.",
+        "Publish a Canvas as a concept map to the server configured below. Nothing is sent " +
+        "unless you explicitly publish; your vault never leaves your machine.",
     });
 
     new Setting(containerEl)
@@ -1000,7 +1021,7 @@ class ThundereggSettingTab extends PluginSettingTab {
       .setDesc("Where maps are published.")
       .addText((t) =>
         t.setValue(this.plugin.settings.serverBaseUrl).onChange(async (v) => {
-          this.plugin.settings.serverBaseUrl = v.trim() || "https://distillmd.dev";
+          this.plugin.settings.serverBaseUrl = v.trim() || DEFAULT_SETTINGS.serverBaseUrl;
           await this.plugin.saveSettings();
         }),
       );
@@ -1010,7 +1031,7 @@ class ThundereggSettingTab extends PluginSettingTab {
       .setDesc(
         hasDeviceToken()
           ? "A device token is connected (stored outside your vault). Paste a new one to replace it."
-          : "Paste a publish-only device token from distillmd.dev/settings. Stored outside your vault — never in plugin data.",
+          : "Paste a publish-only device token from your server's settings page. Stored outside your vault — never in plugin data.",
       )
       .addText((t) => {
         t.inputEl.type = "password";
@@ -1074,10 +1095,10 @@ class ThundereggSettingTab extends PluginSettingTab {
       cls: "setting-item-description",
     });
     cta.appendText(
-      "Thunderegg converts 20+ file types to clean Markdown — 100% on your Mac. " +
-      "Download the free app or unlock the full Refinery at ",
+      "Thunderegg converts 30+ file types to clean Markdown — including meeting recordings, " +
+      "transcribed on-device — 100% on your Mac, free. Get the Mac app at ",
     );
-    cta.createEl("a", { href: "https://distillmd.dev", text: "distillmd.dev" });
+    cta.createEl("a", { href: "https://thunderegg.ai", text: "thunderegg.ai" });
     cta.appendText(".");
   }
 }

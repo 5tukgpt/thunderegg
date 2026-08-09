@@ -5,15 +5,36 @@
 
 /* ── Conversion ───────────────────────────────────────────────────── */
 
-/** File extensions the Thunderegg engine can convert. */
+/**
+ * Audio/video extensions the engine transcribes on-device (whisper.cpp) and turns into a
+ * structured meeting summary. Mirrors convert.sh's A/V case exactly; .mkv/.webm/.avi/.wmv are
+ * deliberately absent — the engine refuses them with a named error, so offering them here would
+ * promise a conversion that always fails.
+ */
+export const AV_EXTENSIONS = new Set([
+  "mp3", "m4a", "wav", "aiff", "aif", "caf", "aac", "flac", "opus",
+  "mp4", "mov", "m4v",
+]);
+
+/**
+ * File extensions the Thunderegg engine can convert. Source of truth is convert.sh's extension
+ * cases; .md is deliberately absent — inside an Obsidian vault every note is already .md, and
+ * the engine's Markdown path is an importer, not a converter.
+ */
 export const CONVERTIBLE = new Set([
-  "pdf", "docx", "xlsx", "xls", "pptx", "html", "htm", "csv", "json",
+  "pdf", "docx", "doc", "rtf", "xlsx", "xls", "pptx", "html", "htm", "csv", "json",
   "eml", "msg", "png", "jpg", "jpeg", "tiff", "tif", "heic", "gif", "bmp", "webp",
+  ...AV_EXTENSIONS,
 ]);
 
 /** True when a file extension (any case) is convertible by the engine. */
 export function isConvertible(ext: string): boolean {
   return CONVERTIBLE.has(ext.toLowerCase());
+}
+
+/** True for a recording (audio/video) — conversion means transcription and takes minutes, not seconds. */
+export function isAudioVideo(ext: string): boolean {
+  return AV_EXTENSIONS.has(ext.toLowerCase());
 }
 
 /** Shell-escape a single argument (POSIX single-quote convention). */
@@ -47,17 +68,45 @@ export interface GradeMeta {
   css: string;
 }
 
+/**
+ * The rock ladder — mirrors the engine's authority (markdown-droplet helpers/promote.py:
+ * GRADES = blank/rough/polished/crystal/gem), which replaced the still ladder on 2026-07-16.
+ * `synthesis` is not a ladder rung: moc.py stamps it on generated map pages (00-Maps).
+ */
 export const GRADE_META: Record<string, GradeMeta> = {
-  vapor:      { label: "Vapor",      icon: "☁️",  css: "vapor" },      // ☁️
-  distillate: { label: "Distillate", icon: "💧", css: "distillate" },  // 💧
-  essence:    { label: "Essence",    icon: "💎", css: "essence" },     // 💎
+  blank:     { label: "Blank",     icon: "⬜", css: "blank" },
+  rough:     { label: "Rough",     icon: "🪨", css: "rough" },
+  polished:  { label: "Polished",  icon: "🔹", css: "polished" },
+  crystal:   { label: "Crystal",   icon: "💠", css: "crystal" },
+  gem:       { label: "Gem",       icon: "💎", css: "gem" },
+  synthesis: { label: "Synthesis", icon: "🗺️", css: "synthesis" },
 };
 
-export const VALID_GRADES = new Set(["vapor", "distillate", "essence"]);
+export const VALID_GRADES = new Set(Object.keys(GRADE_META));
 
-/** Validate a raw frontmatter `grade` value; null when missing/invalid. */
+/**
+ * Legacy still-ladder names → canonical rock-ladder names. Mirrors promote.py LEGACY_GRADES:
+ * "write new values, read both, forever — not a deprecation window, a permanent contract."
+ * Vaults enriched before the rename carry these; they must keep badging.
+ */
+export const LEGACY_GRADES: Record<string, string> = {
+  vapor: "blank",
+  crude: "rough",
+  distillate: "polished",
+  refined: "crystal",
+  essence: "gem",
+};
+
+/**
+ * Validate a raw frontmatter `grade` value; legacy names canonicalize to the rock ladder;
+ * null when missing/unknown. Unlike promote.canon_grade (which fails-safe to "blank" because
+ * it gates enrichment), display code must NOT badge a note whose grade it cannot read.
+ */
 export function normalizeGrade(raw: unknown): string | null {
-  return typeof raw === "string" && VALID_GRADES.has(raw) ? raw : null;
+  if (typeof raw !== "string") return null;
+  const g = raw.trim().toLowerCase();
+  if (VALID_GRADES.has(g)) return g;
+  return LEGACY_GRADES[g] ?? null;
 }
 
 /* ── Bond graph ───────────────────────────────────────────────────── */

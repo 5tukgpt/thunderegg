@@ -41,9 +41,25 @@ var path3 = __toESM(require("path"));
 var fs3 = __toESM(require("fs"));
 
 // core.ts
+var AV_EXTENSIONS = /* @__PURE__ */ new Set([
+  "mp3",
+  "m4a",
+  "wav",
+  "aiff",
+  "aif",
+  "caf",
+  "aac",
+  "flac",
+  "opus",
+  "mp4",
+  "mov",
+  "m4v"
+]);
 var CONVERTIBLE = /* @__PURE__ */ new Set([
   "pdf",
   "docx",
+  "doc",
+  "rtf",
   "xlsx",
   "xls",
   "pptx",
@@ -61,8 +77,12 @@ var CONVERTIBLE = /* @__PURE__ */ new Set([
   "heic",
   "gif",
   "bmp",
-  "webp"
+  "webp",
+  ...AV_EXTENSIONS
 ]);
+function isAudioVideo(ext) {
+  return AV_EXTENSIONS.has(ext.toLowerCase());
+}
 function shellQuote(s) {
   return "'" + s.replace(/'/g, "'\\''") + "'";
 }
@@ -72,16 +92,28 @@ function isNoOcrError(e) {
   return typeof stderr === "string" && stderr.includes(NO_OCR_TOKEN);
 }
 var GRADE_META = {
-  vapor: { label: "Vapor", icon: "\u2601\uFE0F", css: "vapor" },
-  // ☁️
-  distillate: { label: "Distillate", icon: "\u{1F4A7}", css: "distillate" },
-  // 💧
-  essence: { label: "Essence", icon: "\u{1F48E}", css: "essence" }
-  // 💎
+  blank: { label: "Blank", icon: "\u2B1C", css: "blank" },
+  rough: { label: "Rough", icon: "\u{1FAA8}", css: "rough" },
+  polished: { label: "Polished", icon: "\u{1F539}", css: "polished" },
+  crystal: { label: "Crystal", icon: "\u{1F4A0}", css: "crystal" },
+  gem: { label: "Gem", icon: "\u{1F48E}", css: "gem" },
+  synthesis: { label: "Synthesis", icon: "\u{1F5FA}\uFE0F", css: "synthesis" }
 };
-var VALID_GRADES = /* @__PURE__ */ new Set(["vapor", "distillate", "essence"]);
+var VALID_GRADES = new Set(Object.keys(GRADE_META));
+var LEGACY_GRADES = {
+  vapor: "blank",
+  crude: "rough",
+  distillate: "polished",
+  refined: "crystal",
+  essence: "gem"
+};
 function normalizeGrade(raw) {
-  return typeof raw === "string" && VALID_GRADES.has(raw) ? raw : null;
+  if (typeof raw !== "string")
+    return null;
+  const g = raw.trim().toLowerCase();
+  if (VALID_GRADES.has(g))
+    return g;
+  return LEGACY_GRADES[g] ?? null;
 }
 function emptyBondGraph() {
   return { outgoing: /* @__PURE__ */ new Map(), incoming: /* @__PURE__ */ new Map() };
@@ -1135,12 +1167,16 @@ var DEFAULT_SETTINGS = {
   showGradeBadges: true,
   showBondCounts: true,
   showCondenserLinks: true,
+  // The community publish server has NOT been redeployed since the Thunderegg rebrand — this
+  // legacy host currently 404s, and thunderegg.ai is a static site with no /api. Deliberately
+  // left pointing at the legacy zone (a clean HTTP failure) rather than re-pointed (a JSON
+  // parse failure against marketing HTML). Revisit when/if the publish backend ships.
   serverBaseUrl: "https://distillmd.dev",
   blockedZonesCsv: "#health, #work, #client, #private",
   defaultVisibility: "private",
   defaultLicense: "user-generated"
 };
-var ThundereggPlugin = class extends import_obsidian3.Plugin {
+var _ThundereggPlugin = class _ThundereggPlugin extends import_obsidian3.Plugin {
   constructor() {
     super(...arguments);
     this.refineryBarEl = null;
@@ -1319,15 +1355,35 @@ var ThundereggPlugin = class extends import_obsidian3.Plugin {
   shellQuote(s) {
     return shellQuote(s);
   }
+  /**
+   * Environment for an engine call. DISTILL_VAULT_PATH tells the engine which vault to enrich
+   * against — convert.sh's own comment names this plugin as the setter; without it the engine
+   * falls back to the Mac app's configured vault and writes bonds/wikilinks that resolve in
+   * SOMEONE ELSE'S vault, not this one. maxBuffer is raised because a transcription run can
+   * chat well past exec's 1 MB default over the minutes a recording takes.
+   */
+  engineEnv() {
+    const env = { ...process.env };
+    if (!this.settings.frontmatter)
+      env["DISTILL_FRONTMATTER"] = "0";
+    const adapter = this.app.vault.adapter;
+    if (adapter instanceof import_obsidian3.FileSystemAdapter)
+      env["DISTILL_VAULT_PATH"] = adapter.getBasePath();
+    return env;
+  }
   async convertFile(file) {
     const engine = this.settings.enginePath;
     const full = this.absPath(file);
-    const notice = new import_obsidian3.Notice(`Thunderegg: converting ${file.name}\u2026`, 0);
+    const notice = new import_obsidian3.Notice(
+      isAudioVideo(file.extension) ? `Thunderegg: transcribing ${file.name} \u2014 recordings take a few minutes\u2026` : `Thunderegg: converting ${file.name}\u2026`,
+      0
+    );
     try {
-      const env = { ...process.env };
-      if (!this.settings.frontmatter)
-        env["DISTILL_FRONTMATTER"] = "0";
-      await execAsync(`${this.shellQuote(engine)} ${this.shellQuote(full)}`, { env });
+      const env = this.engineEnv();
+      await execAsync(
+        `${this.shellQuote(engine)} ${this.shellQuote(full)}`,
+        { env, maxBuffer: _ThundereggPlugin.ENGINE_MAX_BUFFER }
+      );
       notice.hide();
       new import_obsidian3.Notice(`\u2705 Thunderegg: created ${file.name}.md`);
       if (this.settings.openAfter) {
@@ -1372,12 +1428,10 @@ var ThundereggPlugin = class extends import_obsidian3.Plugin {
     let noOcr = 0;
     for (const t of targets) {
       try {
-        const env = { ...process.env };
-        if (!this.settings.frontmatter)
-          env["DISTILL_FRONTMATTER"] = "0";
+        const env = this.engineEnv();
         await execAsync(
           `${this.shellQuote(this.settings.enginePath)} ${this.shellQuote(this.absPath(t))}`,
-          { env }
+          { env, maxBuffer: _ThundereggPlugin.ENGINE_MAX_BUFFER }
         );
         ok++;
       } catch (e) {
@@ -1431,12 +1485,10 @@ var ThundereggPlugin = class extends import_obsidian3.Plugin {
       const tempFile = this.app.vault.getAbstractFileByPath(tempPath);
       if (!(tempFile instanceof import_obsidian3.TFile))
         throw new Error("Could not create temp file");
-      const env = { ...process.env };
-      if (!this.settings.frontmatter)
-        env["DISTILL_FRONTMATTER"] = "0";
+      const env = this.engineEnv();
       await execAsync(
         `${this.shellQuote(this.settings.enginePath)} ${this.shellQuote(this.absPath(tempFile))}`,
-        { env }
+        { env, maxBuffer: _ThundereggPlugin.ENGINE_MAX_BUFFER }
       );
       await this.app.fileManager.trashFile(tempFile);
       notice.hide();
@@ -1731,6 +1783,8 @@ var ThundereggPlugin = class extends import_obsidian3.Plugin {
     await this.saveData(this.settings);
   }
 };
+_ThundereggPlugin.ENGINE_MAX_BUFFER = 10 * 1024 * 1024;
+var ThundereggPlugin = _ThundereggPlugin;
 function sleep(ms) {
   return new Promise((r) => window.setTimeout(r, ms));
 }
@@ -1777,13 +1831,13 @@ var ThundereggSettingTab = class extends import_obsidian3.PluginSettingTab {
       cls: "setting-item-description thunderegg-refinery-desc"
     });
     refineryDesc.createEl("p", {
-      text: "The Refinery is Thunderegg\u2019s premium knowledge-management layer. It introduces four concepts:"
+      text: "The Refinery is Thunderegg\u2019s knowledge-management layer \u2014 free, like everything else. It introduces three concepts:"
     });
     const ul = refineryDesc.createEl("ul");
     const liGrades = ul.createEl("li");
     liGrades.createEl("strong", { text: "Grades" });
     liGrades.appendText(" \u2014 note maturity: ");
-    liGrades.createEl("em", { text: "Vapor \u2192 Distillate \u2192 Essence" });
+    liGrades.createEl("em", { text: "Blank \u2192 Rough \u2192 Polished \u2192 Crystal \u2192 Gem" });
     const liBonds = ul.createEl("li");
     liBonds.createEl("strong", { text: "Bonds" });
     liBonds.appendText(" \u2014 connections discovered via ");
@@ -1791,9 +1845,6 @@ var ThundereggSettingTab = class extends import_obsidian3.PluginSettingTab {
     const liCondensers = ul.createEl("li");
     liCondensers.createEl("strong", { text: "Condensers" });
     liCondensers.appendText(" \u2014 hub notes with many Bonds");
-    const liFractions = ul.createEl("li");
-    liFractions.createEl("strong", { text: "Fractions" });
-    liFractions.appendText(" \u2014 folder-level grouping of related notes");
     new import_obsidian3.Setting(containerEl).setName("Enable Refinery").setDesc("Show Grade badges, Bond counts, and Condenser links in the UI.").addToggle(
       (t) => t.setValue(this.plugin.settings.refineryEnabled).onChange(async (v) => {
         this.plugin.settings.refineryEnabled = v;
@@ -1845,16 +1896,16 @@ var ThundereggSettingTab = class extends import_obsidian3.PluginSettingTab {
     new import_obsidian3.Setting(containerEl).setName("Publish & Community").setHeading();
     containerEl.createEl("p", {
       cls: "setting-item-description",
-      text: "Publish a Canvas as a concept map to distillmd.dev. Nothing is sent unless you explicitly publish; your vault never leaves your machine."
+      text: "Publish a Canvas as a concept map to the server configured below. Nothing is sent unless you explicitly publish; your vault never leaves your machine."
     });
     new import_obsidian3.Setting(containerEl).setName("Server URL").setDesc("Where maps are published.").addText(
       (t) => t.setValue(this.plugin.settings.serverBaseUrl).onChange(async (v) => {
-        this.plugin.settings.serverBaseUrl = v.trim() || "https://distillmd.dev";
+        this.plugin.settings.serverBaseUrl = v.trim() || DEFAULT_SETTINGS.serverBaseUrl;
         await this.plugin.saveSettings();
       })
     );
     new import_obsidian3.Setting(containerEl).setName("Device token").setDesc(
-      hasDeviceToken() ? "A device token is connected (stored outside your vault). Paste a new one to replace it." : "Paste a publish-only device token from distillmd.dev/settings. Stored outside your vault \u2014 never in plugin data."
+      hasDeviceToken() ? "A device token is connected (stored outside your vault). Paste a new one to replace it." : "Paste a publish-only device token from your server's settings page. Stored outside your vault \u2014 never in plugin data."
     ).addText((t) => {
       t.inputEl.type = "password";
       t.setPlaceholder(hasDeviceToken() ? "\u2022\u2022\u2022\u2022 connected \u2022\u2022\u2022\u2022" : "paste token").onChange((v) => {
@@ -1899,9 +1950,9 @@ var ThundereggSettingTab = class extends import_obsidian3.PluginSettingTab {
       cls: "setting-item-description"
     });
     cta.appendText(
-      "Thunderegg converts 20+ file types to clean Markdown \u2014 100% on your Mac. Download the free app or unlock the full Refinery at "
+      "Thunderegg converts 30+ file types to clean Markdown \u2014 including meeting recordings, transcribed on-device \u2014 100% on your Mac, free. Get the Mac app at "
     );
-    cta.createEl("a", { href: "https://distillmd.dev", text: "distillmd.dev" });
+    cta.createEl("a", { href: "https://thunderegg.ai", text: "thunderegg.ai" });
     cta.appendText(".");
   }
 };
