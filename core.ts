@@ -60,6 +60,29 @@ export function isNoOcrError(e: unknown): boolean {
   return typeof stderr === "string" && stderr.includes(NO_OCR_TOKEN);
 }
 
+/* ── Licence / trial refusals ──────────────────────────────────────
+ * Thunderegg is $19.95 once, after a free trial of 5 conversions. When the engine refuses it
+ * says WHY on stderr, and the two reasons are different people:
+ *   DISTILL_TRIAL_EXHAUSTED — never bought, has no key and no purchase email
+ *   DISTILL_UNLICENSED      — has a key to paste, or a revoked one
+ * Without these the plugin reported both as "Is the Thunderegg app installed?" — which is
+ * false (it is installed and it ran), sends the user hunting for a broken install, and leaves
+ * the refusal NOTICE sitting in their vault as though it were a converted note.
+ */
+export const TRIAL_TOKEN = "DISTILL_TRIAL_EXHAUSTED";
+export const UNLICENSED_TOKEN = "DISTILL_UNLICENSED";
+
+function stderrOf(e: unknown): string {
+  const s = (e as { stderr?: unknown } | null | undefined)?.stderr;
+  return typeof s === "string" ? s : "";
+}
+export function isTrialExhaustedError(e: unknown): boolean {
+  return stderrOf(e).includes(TRIAL_TOKEN);
+}
+export function isUnlicensedError(e: unknown): boolean {
+  return stderrOf(e).includes(UNLICENSED_TOKEN);
+}
+
 /* ── Grades ───────────────────────────────────────────────────────── */
 
 export interface GradeMeta {

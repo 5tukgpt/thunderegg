@@ -10,6 +10,7 @@ import * as path from "path";
 import * as fs from "fs";
 import {
   CONVERTIBLE, GRADE_META, shellQuote, normalizeGrade, isNoOcrError, isAudioVideo,
+  isTrialExhaustedError, isUnlicensedError,
   BondGraph, emptyBondGraph, buildBondGraph,
   bondCount, isCondenser, referencingCondensers,
 } from "./core";
@@ -367,6 +368,26 @@ export default class ThundereggPlugin extends Plugin {
           `Thunderegg couldn't read "${file.name}" — on-device OCR isn't available. ` +
           `Reinstall the Thunderegg app to enable image OCR.`,
           9000,
+        );
+        return;
+      }
+      // A refusal is not a broken install. Say which refusal it is: someone whose trial ran
+      // out has no key and no purchase email, so the activation wording sends them looking
+      // for something that does not exist.
+      if (isTrialExhaustedError(e)) {
+        new Notice(
+          `Thunderegg's free trial is used up, so "${file.name}" wasn't converted. ` +
+          `Thunderegg is $19.95, one time — open Thunderegg → Settings to buy, then try again. ` +
+          `Everything you already converted stays yours.`,
+          12000,
+        );
+        return;
+      }
+      if (isUnlicensedError(e)) {
+        new Notice(
+          `Thunderegg isn't activated, so "${file.name}" wasn't converted. ` +
+          `Open Thunderegg → Settings and paste the licence key from your purchase email.`,
+          12000,
         );
         return;
       }
