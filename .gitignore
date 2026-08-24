@@ -4,3 +4,12 @@ main.js.map
 .DS_Store
 .obsidian/
 data.json
+
+
+# lego-loop probe/scratch artefacts — never part of the plugin
+.__unlink*
+.probe-wt
+_probe_wt
+.lock
+.lean-ctx/
+obsidian-releases/

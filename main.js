@@ -91,6 +91,18 @@ function isNoOcrError(e) {
   const stderr = e?.stderr;
   return typeof stderr === "string" && stderr.includes(NO_OCR_TOKEN);
 }
+var TRIAL_TOKEN = "DISTILL_TRIAL_EXHAUSTED";
+var UNLICENSED_TOKEN = "DISTILL_UNLICENSED";
+function stderrOf(e) {
+  const s = e?.stderr;
+  return typeof s === "string" ? s : "";
+}
+function isTrialExhaustedError(e) {
+  return stderrOf(e).includes(TRIAL_TOKEN);
+}
+function isUnlicensedError(e) {
+  return stderrOf(e).includes(UNLICENSED_TOKEN);
+}
 var GRADE_META = {
   blank: { label: "Blank", icon: "\u2B1C", css: "blank" },
   rough: { label: "Rough", icon: "\u{1FAA8}", css: "rough" },
@@ -1399,6 +1411,20 @@ var _ThundereggPlugin = class _ThundereggPlugin extends import_obsidian3.Plugin 
         new import_obsidian3.Notice(
           `Thunderegg couldn't read "${file.name}" \u2014 on-device OCR isn't available. Reinstall the Thunderegg app to enable image OCR.`,
           9e3
+        );
+        return;
+      }
+      if (isTrialExhaustedError(e)) {
+        new import_obsidian3.Notice(
+          `Thunderegg's free trial is used up, so "${file.name}" wasn't converted. Thunderegg is $19.95, one time \u2014 open Thunderegg \u2192 Settings to buy, then try again. Everything you already converted stays yours.`,
+          12e3
+        );
+        return;
+      }
+      if (isUnlicensedError(e)) {
+        new import_obsidian3.Notice(
+          `Thunderegg isn't activated, so "${file.name}" wasn't converted. Open Thunderegg \u2192 Settings and paste the licence key from your purchase email.`,
+          12e3
         );
         return;
       }
