@@ -1,10 +1,15 @@
 # Thunderegg — Obsidian Plugin
 
-Convert any attachment in your vault — PDF, Word, Excel, PowerPoint, email, image, **even meeting recordings (transcribed on-device)** — to clean Markdown **with YAML frontmatter**, 100% on your Mac. Plus the **Refinery**: track note maturity, discover connections, and surface hub notes automatically. Everything is free.
+Convert any attachment in your vault — PDF, Word, Excel, PowerPoint, email, image, **even meeting recordings (transcribed on-device)** — to clean Markdown **with YAML frontmatter**, 100% on your Mac. Plus the **Refinery**: track note maturity, discover connections, and surface hub notes automatically.
+
+> **The plugin is free and MIT-licensed. The app it drives is not.** Thunderegg for macOS is
+> **$19.95, once** — no subscription, no account — after a free trial of 5 conversions. This
+> plugin is the Obsidian half; the Thunderegg app does the converting, and it is what you buy.
+> [thunderegg.ai](https://thunderegg.ai)
 
 ## Features
 
-### Conversion (free)
+### Conversion
 - **File menu:** right-click a file → *Convert to Markdown (Thunderegg)*
 - **Folder menu:** right-click a folder → *Thunderegg: convert all attachments* (recursive)
 - **Command palette:**
@@ -12,9 +17,10 @@ Convert any attachment in your vault — PDF, Word, Excel, PowerPoint, email, im
   - `Thunderegg: Convert clipboard` — paste clipboard content (HTML or text), run it through Thunderegg, and create a new note
 - **Status bar:** live indicator showing whether the Thunderegg engine is available (🟢 Ready / 🔴 Unavailable)
 - Output is written as `<file>.md` next to the source, with `title/source/type/created/tags` frontmatter.
-- **Recordings become meeting summaries:** drop an audio or video file (mp3, m4a, wav, aiff, aac, flac, opus, mp4, mov, m4v) and the engine transcribes it on-device and writes a structured summary — action items, decisions, notable quotes. Transcription takes a few minutes per recording; nothing is uploaded.
+- **Recordings become meeting summaries:** drop an audio or video file (mp3, m4a, wav, aiff, aac, flac, opus, mp4, mov, m4v, mkv, webm — Zoom, OBS, Discord and
+  browser recordings included) and the engine transcribes it on-device and writes a structured summary — action items, decisions, notable quotes. Transcription takes a few minutes per recording; nothing is uploaded.
 
-### Refinery (free, like everything else)
+### Refinery
 Enable the Refinery in settings for Thunderegg's knowledge-management layer. It adds three concepts:
 
 | Concept       | What it is                                             |
@@ -42,7 +48,7 @@ metadata cache for instant display.
 
 ## Requirements
 - **macOS** (desktop-only — uses the on-device Thunderegg engine).
-- The **Thunderegg app** (or its helper scripts) installed, which provides
+- The **Thunderegg app** — **$19.95 once, 5 conversions free to try** — installed, which provides
   `~/Library/Application Support/MarkItDownDroplet/convert.sh`. The engine path is
   configurable in plugin settings.
 - Image OCR uses the Apple Vision `ocr` helper that ships with the Thunderegg app. If image
@@ -107,7 +113,7 @@ The plugin is listed in the official Obsidian directory as `thunderegg`. To ship
 > plugin executes a local helper script; keep that disclosure if you edit copy.
 
 ## Status
-v0.2.5 — listed in the official Obsidian community directory. On top of the v0.1.0
+v0.2.7 — listed in the official Obsidian community directory. On top of the v0.1.0
 conversion features: the Refinery (rock-ladder grades with permanent legacy-name reads),
 audio/video → on-device meeting summaries, `.doc`/`.rtf` support, vault-aware bond
 discovery (`DISTILL_VAULT_PATH`), clipboard conversion, status-bar indicators, and the

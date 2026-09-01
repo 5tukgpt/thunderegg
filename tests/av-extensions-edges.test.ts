@@ -29,16 +29,32 @@ describe("A/V ⊆ convertible invariant", () => {
   });
 });
 
+describe("Matroska/WebM — supported since the engine's own demuxer (2026-08-11)", () => {
+  it("mkv and webm are A/V and convertible", () => {
+    for (const ext of ["mkv", "webm"]) {
+      expect(isAudioVideo(ext)).toBe(true);
+      expect(isConvertible(ext)).toBe(true);
+    }
+  });
+  it("is case-insensitive for them too, like every other extension", () => {
+    expect(isAudioVideo("MKV")).toBe(true);
+    expect(isAudioVideo("WebM")).toBe(true);
+  });
+});
+
 describe("deliberately-refused container formats", () => {
-  it("mkv/webm/avi/wmv are neither A/V nor convertible", () => {
-    for (const ext of ["mkv", "webm", "avi", "wmv"]) {
+  // convert.sh DOES route .avi/.wmv/.wma to transcribe, but only so it can name the container
+  // and tell the user to convert it first. That is a better error message, not a conversion —
+  // so offering a menu item for them would still promise something that always fails.
+  it("avi/wmv/wma are neither A/V nor convertible", () => {
+    for (const ext of ["avi", "wmv", "wma"]) {
       expect(isAudioVideo(ext)).toBe(false);
       expect(isConvertible(ext)).toBe(false);
     }
   });
-  it("does not confuse webp (convertible image) with webm (refused video)", () => {
+  it("does not confuse webp (convertible image) with webm (now a supported video)", () => {
     expect(isConvertible("webp")).toBe(true);
-    expect(isConvertible("webm")).toBe(false);
     expect(isAudioVideo("webp")).toBe(false);
+    expect(isAudioVideo("webm")).toBe(true);
   });
 });

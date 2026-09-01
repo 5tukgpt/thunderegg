@@ -7,13 +7,22 @@
 
 /**
  * Audio/video extensions the engine transcribes on-device (whisper.cpp) and turns into a
- * structured meeting summary. Mirrors convert.sh's A/V case exactly; .mkv/.webm/.avi/.wmv are
- * deliberately absent — the engine refuses them with a named error, so offering them here would
- * promise a conversion that always fails.
+ * structured meeting summary. Mirrors the SUCCEEDING half of convert.sh's A/V case.
+ *
+ * .mkv/.webm were deliberately absent here until the engine grew its own Matroska/WebM demuxer
+ * on 2026-08-11 (convert.sh:611-613 — transcribe demuxes the container itself and hands packets
+ * to Apple's decoders, so Zoom/OBS/Discord/browser recordings work). That comment's premise —
+ * "the engine refuses them" — expired with the feature, and this list did not move for three
+ * weeks, so a Zoom recording sitting in a vault got no menu item at all.
+ *
+ * .avi/.wmv/.wma stay absent, and for the ORIGINAL reason, which is still true: convert.sh
+ * routes them to transcribe only so it can name the container and say to convert it first.
+ * That is a better error, not a conversion. Offering a menu item that always fails is the thing
+ * the old comment was right about — it is only mkv/webm that changed.
  */
 export const AV_EXTENSIONS = new Set([
   "mp3", "m4a", "wav", "aiff", "aif", "caf", "aac", "flac", "opus",
-  "mp4", "mov", "m4v",
+  "mp4", "mov", "m4v", "mkv", "webm",
 ]);
 
 /**

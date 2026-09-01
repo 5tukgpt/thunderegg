@@ -53,7 +53,9 @@ var AV_EXTENSIONS = /* @__PURE__ */ new Set([
   "opus",
   "mp4",
   "mov",
-  "m4v"
+  "m4v",
+  "mkv",
+  "webm"
 ]);
 var CONVERTIBLE = /* @__PURE__ */ new Set([
   "pdf",
