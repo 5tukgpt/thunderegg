@@ -1,7 +1,7 @@
 {
   "id": "thunderegg",
   "name": "Thunderegg",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "minAppVersion": "1.6.6",
   "description": "macOS only. Convert attachments — documents, images, even meeting recordings (transcribed on-device) — to Markdown via the local Thunderegg engine (shell). Adds the Refinery (Grades, Bonds, Condensers) and optional Canvas publishing to a server you configure.",
   "author": "Thunderegg",

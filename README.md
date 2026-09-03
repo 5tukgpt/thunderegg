@@ -108,7 +108,11 @@ Then enable **Thunderegg** in Settings → Community plugins.
 
 ## Releasing an update (the plugin is already in the community catalog)
 The plugin is listed in the official Obsidian directory as `thunderegg`. To ship an update:
-1. Bump `version` in `manifest.json` (and `versions.json` if `minAppVersion` changed).
+1. Bump `version` in `manifest.json` **and add the same version to `versions.json`** —
+   always, even when `minAppVersion` did not change. Obsidian picks the newest version
+   whose `versions.json` entry its app version satisfies, so a MISSING key does not mean
+   "unchanged", it means "skip this release". 0.2.1-0.2.3 were absent for exactly this
+   reason and every Obsidian 1.4.0-1.6.5 user silently resolved back to 0.2.0.
 2. `npm test && npm run build`.
 3. Tag a release named exactly the version, with `manifest.json`, `main.js`, and `styles.css`
    as assets — Obsidian serves updates from the GitHub release, no new catalog PR needed.
