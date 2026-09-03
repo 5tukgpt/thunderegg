@@ -42,6 +42,24 @@ export function isConvertible(ext: string): boolean {
 }
 
 /** True for a recording (audio/video) — conversion means transcription and takes minutes, not seconds. */
+/** Drop the extension from the LAST path segment: "docs/report.pdf" -> "docs/report".
+ *
+ *  Used ONLY as the degraded fallback when the engine did not report the note path it chose
+ *  (an engine older than 2026-08-13). The engine's own form is `${src%.*}`, which strips at
+ *  the last dot ANYWHERE in the string — so on "v1.2/report" it would eat part of the
+ *  directory. This deliberately differs: only the basename is touched, and a dotfile
+ *  (".gitignore") or an extensionless name is returned unchanged, matching what the engine
+ *  does for the cases that actually occur while refusing to corrupt the ones it gets wrong.
+ */
+export function stemPath(p: string): string {
+  const slash = p.lastIndexOf("/");
+  const dir = slash >= 0 ? p.slice(0, slash + 1) : "";
+  const name = slash >= 0 ? p.slice(slash + 1) : p;
+  const dot = name.lastIndexOf(".");
+  if (dot <= 0) return p;                 // no extension, or a leading-dot dotfile
+  return dir + name.slice(0, dot);
+}
+
 export function isAudioVideo(ext: string): boolean {
   return AV_EXTENSIONS.has(ext.toLowerCase());
 }

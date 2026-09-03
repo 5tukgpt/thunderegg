@@ -80,10 +80,17 @@ The Refinery reads from Obsidian's `metadataCache.resolvedLinks` to build the bo
 ### Publish & Community (optional, off by default — and the one feature that CAN upload)
 The plugin can publish an Obsidian **Canvas** as a signed concept map to a server you
 configure (Settings → Publish & Community), and import maps others share via
-`obsidian://distill-fork` links. This is the plugin's **only** network feature: nothing is
-ever sent unless you explicitly run a Publish command, publishing sends only the selected
-Canvas (after a redaction scan for blocked tags), and the device token is stored outside
-your vault. The hosted community server is not currently online; the feature works against
+`obsidian://distill-fork` links. This is the only network call **the plugin itself** makes:
+nothing is sent by the plugin unless you explicitly run a Publish command, publishing sends
+only the selected Canvas (after a redaction scan for blocked tags), and the device token is
+stored outside your vault.
+
+That is a claim about the plugin, not about the whole pipeline, and the difference matters.
+Conversion, OCR and transcription run entirely on your Mac. But if you have connected a
+cloud model in the Thunderegg app, the **engine's** AI enrichment step sends part of each
+converted note to that provider — the plugin never sees that request and cannot prevent it.
+Mark the vault **Local** in Thunderegg (or connect no cloud model) to keep everything
+on-device. The hosted community server is not currently online; the feature works against
 any server implementing the protocol.
 
 ## Build from source

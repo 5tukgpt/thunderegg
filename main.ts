@@ -10,7 +10,7 @@ import * as path from "path";
 import * as fs from "fs";
 import {
   CONVERTIBLE, GRADE_META, shellQuote, normalizeGrade, isNoOcrError, isAudioVideo,
-  isTrialExhaustedError, isUnlicensedError,
+  isTrialExhaustedError, isUnlicensedError, stemPath,
   BondGraph, emptyBondGraph, buildBondGraph,
   bondCount, isCondenser, referencingCondensers,
 } from "./core";
@@ -335,6 +335,54 @@ export default class ThundereggPlugin extends Plugin {
 
   private static readonly ENGINE_MAX_BUFFER = 10 * 1024 * 1024;
 
+  /** Monotonic suffix so two conversions never share a capture file. */
+  private noteOutSeq = 0;
+
+  /* The engine WRITES the note path it actually chose to $DISTILL_NOTE_PATH_OUT
+     (convert.sh:1150). ASK IT — never reconstruct the name. The engine renamed
+     `report.pdf.md` -> `report.md` on 2026-08-13; every caller that rebuilt the name from
+     the source has been wrong for each ordinary file since, and convert.sh:1143-1147
+     records that exact bug happening to watch_convert.sh. `report.pdf.md` is now only the
+     collision fallback, so guessing it is wrong in the common case and right in the rare one.
+
+     Returns vault-relative paths in the order the engine wrote them, or [] when the engine
+     wrote nothing — an older engine that does not honour the variable lands here, so callers
+     must degrade rather than depend on it. */
+  private async runEngine(absSource: string): Promise<string[]> {
+    const outFile = path.join(
+      os.tmpdir(), `thunderegg-note-${process.pid}-${this.noteOutSeq++}.txt`);
+    const env = this.engineEnv();
+    env["DISTILL_NOTE_PATH_OUT"] = outFile;
+    try {
+      await execAsync(
+        `${this.shellQuote(this.settings.enginePath)} ${this.shellQuote(absSource)}`,
+        { env, maxBuffer: ThundereggPlugin.ENGINE_MAX_BUFFER });
+      return this.readNotePaths(outFile);
+    } finally {
+      try { fs.unlinkSync(outFile); } catch { /* best effort — it is in tmp */ }
+    }
+  }
+
+  /** Absolute paths from the capture file -> vault-relative. Anything outside the vault is
+      dropped: the engine can file a note elsewhere (CONVERT_DEST), and a path Obsidian
+      cannot address is not something we can open or name. */
+  private readNotePaths(outFile: string): string[] {
+    let raw = "";
+    try { raw = fs.readFileSync(outFile, "utf8"); } catch { return []; }
+    const adapter = this.app.vault.adapter;
+    const base = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
+    if (!base) return [];
+    const out: string[] = [];
+    for (const line of raw.split("\n")) {
+      const abs = line.trim();
+      if (!abs) continue;
+      const rel = path.relative(base, abs);
+      if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) continue;
+      out.push(normalizePath(rel));
+    }
+    return out;
+  }
+
   async convertFile(file: TFile): Promise<void> {
     const engine = this.settings.enginePath;
     const full   = this.absPath(file);
@@ -346,17 +394,19 @@ export default class ThundereggPlugin extends Plugin {
     );
 
     try {
-      const env = this.engineEnv();
-
-      await execAsync(`${this.shellQuote(engine)} ${this.shellQuote(full)}`,
-        { env, maxBuffer: ThundereggPlugin.ENGINE_MAX_BUFFER });
+      const notes = await this.runEngine(full);
       notice.hide();
-      new Notice(`✅ Thunderegg: created ${file.name}.md`);
+      // Name what the engine actually wrote. Only fall back to the old reconstruction when
+      // the engine told us nothing, and even then say the stem name the engine prefers —
+      // `${file.path}.md` is the collision fallback, not the normal result.
+      const created = notes.length
+        ? notes[notes.length - 1]
+        : normalizePath(`${stemPath(file.path)}.md`);
+      new Notice(`✅ Thunderegg: created ${created.split("/").pop()}`);
 
       if (this.settings.openAfter) {
-        const mdPath = normalizePath(`${file.path}.md`);
         await sleep(300);
-        const md = this.app.vault.getAbstractFileByPath(mdPath);
+        const md = this.app.vault.getAbstractFileByPath(created);
         if (md instanceof TFile) void this.app.workspace.getLeaf(true).openFile(md);
       }
     } catch (e) {
@@ -419,15 +469,18 @@ export default class ThundereggPlugin extends Plugin {
     let ok = 0;
     let noOcr = 0;
 
+    // A licence refusal is not a per-file problem — it refuses every remaining file, and each
+    // refusal writes a lock-notice note into the vault under the name the real note would have
+    // had. Stop at the first one and say which it is. 0.2.6 fixed exactly this for a single
+    // file and left the folder path reporting "converted 0/N" behind a green tick.
+    let refusal: "trial" | "unlicensed" | null = null;
     for (const t of targets) {
       try {
-        const env = this.engineEnv();
-        await execAsync(
-          `${this.shellQuote(this.settings.enginePath)} ${this.shellQuote(this.absPath(t))}`,
-          { env, maxBuffer: ThundereggPlugin.ENGINE_MAX_BUFFER },
-        );
+        await this.runEngine(this.absPath(t));
         ok++;
       } catch (e) {
+        if (isTrialExhaustedError(e)) { refusal = "trial";      break; }
+        if (isUnlicensedError(e))     { refusal = "unlicensed"; break; }
         // Missing OCR must NOT short-circuit the batch: it only stops images, so every
         // other file still converts. Count them and name the remedy once, below.
         if (isNoOcrError(e)) noOcr++;
@@ -436,6 +489,22 @@ export default class ThundereggPlugin extends Plugin {
     }
 
     notice.hide();
+    if (refusal) {
+      // Lead with the reason, not a tick. Name the placeholder notes too: the user is about
+      // to find them in the folder and they look like real converted notes.
+      const done = ok > 0 ? `${ok} of ${targets.length} files converted first. ` : "";
+      new Notice(
+        refusal === "trial"
+          ? `Thunderegg's free trial is used up, so the rest of the folder wasn't converted. ` +
+            `${done}Thunderegg is $19.95, one time — open Thunderegg → Settings to buy, then ` +
+            `try again. Any "🔒" notes left in the folder are placeholders, not conversions.`
+          : `Thunderegg isn't activated, so the rest of the folder wasn't converted. ` +
+            `${done}Open Thunderegg → Settings and paste the licence key from your purchase ` +
+            `email. Any "🔒" notes left in the folder are placeholders, not conversions.`,
+        14000,
+      );
+      return;
+    }
     let msg = `✅ Thunderegg: converted ${ok}/${targets.length} files.`;
     if (noOcr > 0) {
       msg += ` ${noOcr} image(s) need on-device OCR — reinstall the Thunderegg app to enable it.`;
@@ -930,7 +999,8 @@ class ThundereggSettingTab extends PluginSettingTab {
     });
     refineryDesc.createEl("p", {
       text:
-        "The Refinery is Thunderegg’s knowledge-management layer — free, like everything else. " +
+        "The Refinery is Thunderegg’s knowledge-management layer. This plugin is free and " +
+        "open source; the Thunderegg app it drives is $19.95 once, after a free trial. " +
         "It introduces three concepts:",
     });
     const ul = refineryDesc.createEl("ul");
@@ -1034,7 +1104,10 @@ class ThundereggSettingTab extends PluginSettingTab {
       cls: "setting-item-description",
       text:
         "Publish a Canvas as a concept map to the server configured below. Nothing is sent " +
-        "unless you explicitly publish; your vault never leaves your machine.",
+        "unless you explicitly publish. Conversion, OCR and transcription all run on your Mac. " +
+      "If you have connected a cloud model in the Thunderegg app, the AI enrichment step sends " +
+      "part of each note to that provider — mark a vault Local in Thunderegg to keep " +
+      "everything on-device.",
     });
 
     new Setting(containerEl)

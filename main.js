@@ -82,6 +82,15 @@ var CONVERTIBLE = /* @__PURE__ */ new Set([
   "webp",
   ...AV_EXTENSIONS
 ]);
+function stemPath(p) {
+  const slash = p.lastIndexOf("/");
+  const dir = slash >= 0 ? p.slice(0, slash + 1) : "";
+  const name = slash >= 0 ? p.slice(slash + 1) : p;
+  const dot = name.lastIndexOf(".");
+  if (dot <= 0)
+    return p;
+  return dir + name.slice(0, dot);
+}
 function isAudioVideo(ext) {
   return AV_EXTENSIONS.has(ext.toLowerCase());
 }
@@ -1198,6 +1207,8 @@ var _ThundereggPlugin = class _ThundereggPlugin extends import_obsidian3.Plugin 
     this.thundereggAvailable = false;
     this.bonds = emptyBondGraph();
     this.lastForkReceipt = null;
+    /** Monotonic suffix so two conversions never share a capture file. */
+    this.noteOutSeq = 0;
   }
   /* ── Lifecycle ──────────────────────────────────────────────── */
   async onload() {
@@ -1385,6 +1396,62 @@ var _ThundereggPlugin = class _ThundereggPlugin extends import_obsidian3.Plugin 
       env["DISTILL_VAULT_PATH"] = adapter.getBasePath();
     return env;
   }
+  /* The engine WRITES the note path it actually chose to $DISTILL_NOTE_PATH_OUT
+       (convert.sh:1150). ASK IT — never reconstruct the name. The engine renamed
+       `report.pdf.md` -> `report.md` on 2026-08-13; every caller that rebuilt the name from
+       the source has been wrong for each ordinary file since, and convert.sh:1143-1147
+       records that exact bug happening to watch_convert.sh. `report.pdf.md` is now only the
+       collision fallback, so guessing it is wrong in the common case and right in the rare one.
+  
+       Returns vault-relative paths in the order the engine wrote them, or [] when the engine
+       wrote nothing — an older engine that does not honour the variable lands here, so callers
+       must degrade rather than depend on it. */
+  async runEngine(absSource) {
+    const outFile = path3.join(
+      os3.tmpdir(),
+      `thunderegg-note-${process.pid}-${this.noteOutSeq++}.txt`
+    );
+    const env = this.engineEnv();
+    env["DISTILL_NOTE_PATH_OUT"] = outFile;
+    try {
+      await execAsync(
+        `${this.shellQuote(this.settings.enginePath)} ${this.shellQuote(absSource)}`,
+        { env, maxBuffer: _ThundereggPlugin.ENGINE_MAX_BUFFER }
+      );
+      return this.readNotePaths(outFile);
+    } finally {
+      try {
+        fs3.unlinkSync(outFile);
+      } catch {
+      }
+    }
+  }
+  /** Absolute paths from the capture file -> vault-relative. Anything outside the vault is
+      dropped: the engine can file a note elsewhere (CONVERT_DEST), and a path Obsidian
+      cannot address is not something we can open or name. */
+  readNotePaths(outFile) {
+    let raw = "";
+    try {
+      raw = fs3.readFileSync(outFile, "utf8");
+    } catch {
+      return [];
+    }
+    const adapter = this.app.vault.adapter;
+    const base = adapter instanceof import_obsidian3.FileSystemAdapter ? adapter.getBasePath() : "";
+    if (!base)
+      return [];
+    const out = [];
+    for (const line of raw.split("\n")) {
+      const abs = line.trim();
+      if (!abs)
+        continue;
+      const rel = path3.relative(base, abs);
+      if (!rel || rel.startsWith("..") || path3.isAbsolute(rel))
+        continue;
+      out.push((0, import_obsidian3.normalizePath)(rel));
+    }
+    return out;
+  }
   async convertFile(file) {
     const engine = this.settings.enginePath;
     const full = this.absPath(file);
@@ -1393,17 +1460,13 @@ var _ThundereggPlugin = class _ThundereggPlugin extends import_obsidian3.Plugin 
       0
     );
     try {
-      const env = this.engineEnv();
-      await execAsync(
-        `${this.shellQuote(engine)} ${this.shellQuote(full)}`,
-        { env, maxBuffer: _ThundereggPlugin.ENGINE_MAX_BUFFER }
-      );
+      const notes = await this.runEngine(full);
       notice.hide();
-      new import_obsidian3.Notice(`\u2705 Thunderegg: created ${file.name}.md`);
+      const created = notes.length ? notes[notes.length - 1] : (0, import_obsidian3.normalizePath)(`${stemPath(file.path)}.md`);
+      new import_obsidian3.Notice(`\u2705 Thunderegg: created ${created.split("/").pop()}`);
       if (this.settings.openAfter) {
-        const mdPath = (0, import_obsidian3.normalizePath)(`${file.path}.md`);
         await sleep(300);
-        const md = this.app.vault.getAbstractFileByPath(mdPath);
+        const md = this.app.vault.getAbstractFileByPath(created);
         if (md instanceof import_obsidian3.TFile)
           void this.app.workspace.getLeaf(true).openFile(md);
       }
@@ -1454,21 +1517,34 @@ var _ThundereggPlugin = class _ThundereggPlugin extends import_obsidian3.Plugin 
     const notice = new import_obsidian3.Notice(`Thunderegg: converting ${targets.length} files\u2026`, 0);
     let ok = 0;
     let noOcr = 0;
+    let refusal = null;
     for (const t of targets) {
       try {
-        const env = this.engineEnv();
-        await execAsync(
-          `${this.shellQuote(this.settings.enginePath)} ${this.shellQuote(this.absPath(t))}`,
-          { env, maxBuffer: _ThundereggPlugin.ENGINE_MAX_BUFFER }
-        );
+        await this.runEngine(this.absPath(t));
         ok++;
       } catch (e) {
+        if (isTrialExhaustedError(e)) {
+          refusal = "trial";
+          break;
+        }
+        if (isUnlicensedError(e)) {
+          refusal = "unlicensed";
+          break;
+        }
         if (isNoOcrError(e))
           noOcr++;
         console.error("[Thunderegg]", t.path, e);
       }
     }
     notice.hide();
+    if (refusal) {
+      const done = ok > 0 ? `${ok} of ${targets.length} files converted first. ` : "";
+      new import_obsidian3.Notice(
+        refusal === "trial" ? `Thunderegg's free trial is used up, so the rest of the folder wasn't converted. ${done}Thunderegg is $19.95, one time \u2014 open Thunderegg \u2192 Settings to buy, then try again. Any "\u{1F512}" notes left in the folder are placeholders, not conversions.` : `Thunderegg isn't activated, so the rest of the folder wasn't converted. ${done}Open Thunderegg \u2192 Settings and paste the licence key from your purchase email. Any "\u{1F512}" notes left in the folder are placeholders, not conversions.`,
+        14e3
+      );
+      return;
+    }
     let msg = `\u2705 Thunderegg: converted ${ok}/${targets.length} files.`;
     if (noOcr > 0) {
       msg += ` ${noOcr} image(s) need on-device OCR \u2014 reinstall the Thunderegg app to enable it.`;
@@ -1859,7 +1935,7 @@ var ThundereggSettingTab = class extends import_obsidian3.PluginSettingTab {
       cls: "setting-item-description thunderegg-refinery-desc"
     });
     refineryDesc.createEl("p", {
-      text: "The Refinery is Thunderegg\u2019s knowledge-management layer \u2014 free, like everything else. It introduces three concepts:"
+      text: "The Refinery is Thunderegg\u2019s knowledge-management layer. This plugin is free and open source; the Thunderegg app it drives is $19.95 once, after a free trial. It introduces three concepts:"
     });
     const ul = refineryDesc.createEl("ul");
     const liGrades = ul.createEl("li");
@@ -1924,7 +2000,7 @@ var ThundereggSettingTab = class extends import_obsidian3.PluginSettingTab {
     new import_obsidian3.Setting(containerEl).setName("Publish & Community").setHeading();
     containerEl.createEl("p", {
       cls: "setting-item-description",
-      text: "Publish a Canvas as a concept map to the server configured below. Nothing is sent unless you explicitly publish; your vault never leaves your machine."
+      text: "Publish a Canvas as a concept map to the server configured below. Nothing is sent unless you explicitly publish. Conversion, OCR and transcription all run on your Mac. If you have connected a cloud model in the Thunderegg app, the AI enrichment step sends part of each note to that provider \u2014 mark a vault Local in Thunderegg to keep everything on-device."
     });
     new import_obsidian3.Setting(containerEl).setName("Server URL").setDesc("Where maps are published.").addText(
       (t) => t.setValue(this.plugin.settings.serverBaseUrl).onChange(async (v) => {
