@@ -399,9 +399,22 @@ export default class ThundereggPlugin extends Plugin {
       // Name what the engine actually wrote. Only fall back to the old reconstruction when
       // the engine told us nothing, and even then say the stem name the engine prefers —
       // `${file.path}.md` is the collision fallback, not the normal result.
+      // An empty capture does NOT prove an old engine: convert.sh exits 0 and writes nothing
+      // when its `[ -f "$f" ]` check fails (a moved file, an unmounted volume). Verified
+      // against the deployed engine — exit 0, capture file never created. So the fallback name
+      // is a GUESS and must be confirmed on disk before we claim a note exists, or this branch
+      // reopens the same fake-success hole 0.2.6 and 03f81ab each closed once.
       const created = notes.length
         ? notes[notes.length - 1]
         : normalizePath(`${stemPath(file.path)}.md`);
+      if (!notes.length && !(this.app.vault.getAbstractFileByPath(created) instanceof TFile)) {
+        new Notice(
+          `Thunderegg reported success for "${file.name}" but no note appeared. ` +
+          `If the file lives on a drive that is not mounted, reconnect it and try again.`,
+          10000,
+        );
+        return;
+      }
       new Notice(`✅ Thunderegg: created ${created.split("/").pop()}`);
 
       if (this.settings.openAfter) {
@@ -474,10 +487,19 @@ export default class ThundereggPlugin extends Plugin {
     // had. Stop at the first one and say which it is. 0.2.6 fixed exactly this for a single
     // file and left the folder path reporting "converted 0/N" behind a green tick.
     let refusal: "trial" | "unlicensed" | null = null;
+    let missing = 0;   // exited 0 but produced no note — a moved file or an unmounted volume
     for (const t of targets) {
       try {
-        await this.runEngine(this.absPath(t));
-        ok++;
+        // Count NOTES, not exit codes. convert.sh exits 0 without writing anything when its
+        // `[ -f "$f" ]` check fails, so counting exit-0 reports "converted 200/200 files"
+        // over an empty folder. An older engine reports no path at all — fall back to the
+        // engine's own naming and confirm the note is really there before counting it.
+        const produced = await this.runEngine(this.absPath(t));
+        const landed = produced.length
+          ? true
+          : this.app.vault.getAbstractFileByPath(
+              normalizePath(`${stemPath(t.path)}.md`)) instanceof TFile;
+        if (landed) ok++; else missing++;
       } catch (e) {
         if (isTrialExhaustedError(e)) { refusal = "trial";      break; }
         if (isUnlicensedError(e))     { refusal = "unlicensed"; break; }
@@ -497,10 +519,12 @@ export default class ThundereggPlugin extends Plugin {
         refusal === "trial"
           ? `Thunderegg's free trial is used up, so the rest of the folder wasn't converted. ` +
             `${done}Thunderegg is $19.95, one time — open Thunderegg → Settings to buy, then ` +
-            `try again. Any "🔒" notes left in the folder are placeholders, not conversions.`
+            `try again. Any "Your free trial is used up" notes left in the folder are ` +
+            `placeholders, not conversions.`
           : `Thunderegg isn't activated, so the rest of the folder wasn't converted. ` +
             `${done}Open Thunderegg → Settings and paste the licence key from your purchase ` +
-            `email. Any "🔒" notes left in the folder are placeholders, not conversions.`,
+            `email. Any "🔒 Thunderegg isn't activated" notes left in the folder are ` +
+            `placeholders, not conversions.`,
         14000,
       );
       return;
@@ -508,6 +532,10 @@ export default class ThundereggPlugin extends Plugin {
     let msg = `✅ Thunderegg: converted ${ok}/${targets.length} files.`;
     if (noOcr > 0) {
       msg += ` ${noOcr} image(s) need on-device OCR — reinstall the Thunderegg app to enable it.`;
+    }
+    if (missing > 0) {
+      msg += ` ${missing} file(s) reported success but produced no note — if they live on a ` +
+             `drive that is not mounted, reconnect it and run this again.`;
     }
     new Notice(msg, noOcr > 0 ? 10000 : undefined);
   }
@@ -556,18 +584,20 @@ export default class ThundereggPlugin extends Plugin {
       const tempFile = this.app.vault.getAbstractFileByPath(tempPath);
       if (!(tempFile instanceof TFile)) throw new Error("Could not create temp file");
 
-      const env = this.engineEnv();
-      await execAsync(
-        `${this.shellQuote(this.settings.enginePath)} ${this.shellQuote(this.absPath(tempFile))}`,
-        { env, maxBuffer: ThundereggPlugin.ENGINE_MAX_BUFFER },
-      );
+      // Route through runEngine like every other caller. The temp name carries a timestamp,
+      // so it is ALWAYS free, so the engine ALWAYS claims `<stem>.md` — meaning the old
+      // `${tempPath}.md` reconstruction missed on 100% of runs, not intermittently, and left
+      // a note called `_thunderegg_clip_<epoch>` in the vault root every single time.
+      const notes = await this.runEngine(this.absPath(tempFile));
 
       // Remove the temporary source file
       await this.app.fileManager.trashFile(tempFile);
       notice.hide();
 
       // Locate the generated .md and give it a friendly name
-      const mdRawPath = normalizePath(`${tempPath}.md`);
+      const mdRawPath = notes.length
+        ? notes[notes.length - 1]
+        : normalizePath(`${stemPath(tempPath)}.md`);
       await sleep(400);
       const mdFile = this.app.vault.getAbstractFileByPath(mdRawPath);
 
@@ -1190,7 +1220,8 @@ class ThundereggSettingTab extends PluginSettingTab {
     });
     cta.appendText(
       "Thunderegg converts 30+ file types to clean Markdown — including meeting recordings, " +
-      "transcribed on-device — 100% on your Mac, free. Get the Mac app at ",
+      "transcribed on-device — 100% on your Mac. This plugin is free; the Mac app is " +
+      "$19.95 once, after a free trial. Get it at ",
     );
     cta.createEl("a", { href: "https://thunderegg.ai", text: "thunderegg.ai" });
     cta.appendText(".");

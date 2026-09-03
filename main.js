@@ -69,6 +69,8 @@ var CONVERTIBLE = /* @__PURE__ */ new Set([
   "htm",
   "csv",
   "json",
+  "jsonl",
+  "txt",
   "eml",
   "msg",
   "png",
@@ -1463,6 +1465,13 @@ var _ThundereggPlugin = class _ThundereggPlugin extends import_obsidian3.Plugin 
       const notes = await this.runEngine(full);
       notice.hide();
       const created = notes.length ? notes[notes.length - 1] : (0, import_obsidian3.normalizePath)(`${stemPath(file.path)}.md`);
+      if (!notes.length && !(this.app.vault.getAbstractFileByPath(created) instanceof import_obsidian3.TFile)) {
+        new import_obsidian3.Notice(
+          `Thunderegg reported success for "${file.name}" but no note appeared. If the file lives on a drive that is not mounted, reconnect it and try again.`,
+          1e4
+        );
+        return;
+      }
       new import_obsidian3.Notice(`\u2705 Thunderegg: created ${created.split("/").pop()}`);
       if (this.settings.openAfter) {
         await sleep(300);
@@ -1518,10 +1527,17 @@ var _ThundereggPlugin = class _ThundereggPlugin extends import_obsidian3.Plugin 
     let ok = 0;
     let noOcr = 0;
     let refusal = null;
+    let missing = 0;
     for (const t of targets) {
       try {
-        await this.runEngine(this.absPath(t));
-        ok++;
+        const produced = await this.runEngine(this.absPath(t));
+        const landed = produced.length ? true : this.app.vault.getAbstractFileByPath(
+          (0, import_obsidian3.normalizePath)(`${stemPath(t.path)}.md`)
+        ) instanceof import_obsidian3.TFile;
+        if (landed)
+          ok++;
+        else
+          missing++;
       } catch (e) {
         if (isTrialExhaustedError(e)) {
           refusal = "trial";
@@ -1540,7 +1556,7 @@ var _ThundereggPlugin = class _ThundereggPlugin extends import_obsidian3.Plugin 
     if (refusal) {
       const done = ok > 0 ? `${ok} of ${targets.length} files converted first. ` : "";
       new import_obsidian3.Notice(
-        refusal === "trial" ? `Thunderegg's free trial is used up, so the rest of the folder wasn't converted. ${done}Thunderegg is $19.95, one time \u2014 open Thunderegg \u2192 Settings to buy, then try again. Any "\u{1F512}" notes left in the folder are placeholders, not conversions.` : `Thunderegg isn't activated, so the rest of the folder wasn't converted. ${done}Open Thunderegg \u2192 Settings and paste the licence key from your purchase email. Any "\u{1F512}" notes left in the folder are placeholders, not conversions.`,
+        refusal === "trial" ? `Thunderegg's free trial is used up, so the rest of the folder wasn't converted. ${done}Thunderegg is $19.95, one time \u2014 open Thunderegg \u2192 Settings to buy, then try again. Any "Your free trial is used up" notes left in the folder are placeholders, not conversions.` : `Thunderegg isn't activated, so the rest of the folder wasn't converted. ${done}Open Thunderegg \u2192 Settings and paste the licence key from your purchase email. Any "\u{1F512} Thunderegg isn't activated" notes left in the folder are placeholders, not conversions.`,
         14e3
       );
       return;
@@ -1548,6 +1564,9 @@ var _ThundereggPlugin = class _ThundereggPlugin extends import_obsidian3.Plugin 
     let msg = `\u2705 Thunderegg: converted ${ok}/${targets.length} files.`;
     if (noOcr > 0) {
       msg += ` ${noOcr} image(s) need on-device OCR \u2014 reinstall the Thunderegg app to enable it.`;
+    }
+    if (missing > 0) {
+      msg += ` ${missing} file(s) reported success but produced no note \u2014 if they live on a drive that is not mounted, reconnect it and run this again.`;
     }
     new import_obsidian3.Notice(msg, noOcr > 0 ? 1e4 : void 0);
   }
@@ -1589,14 +1608,10 @@ var _ThundereggPlugin = class _ThundereggPlugin extends import_obsidian3.Plugin 
       const tempFile = this.app.vault.getAbstractFileByPath(tempPath);
       if (!(tempFile instanceof import_obsidian3.TFile))
         throw new Error("Could not create temp file");
-      const env = this.engineEnv();
-      await execAsync(
-        `${this.shellQuote(this.settings.enginePath)} ${this.shellQuote(this.absPath(tempFile))}`,
-        { env, maxBuffer: _ThundereggPlugin.ENGINE_MAX_BUFFER }
-      );
+      const notes = await this.runEngine(this.absPath(tempFile));
       await this.app.fileManager.trashFile(tempFile);
       notice.hide();
-      const mdRawPath = (0, import_obsidian3.normalizePath)(`${tempPath}.md`);
+      const mdRawPath = notes.length ? notes[notes.length - 1] : (0, import_obsidian3.normalizePath)(`${stemPath(tempPath)}.md`);
       await sleep(400);
       const mdFile = this.app.vault.getAbstractFileByPath(mdRawPath);
       if (mdFile instanceof import_obsidian3.TFile) {
@@ -2054,7 +2069,7 @@ var ThundereggSettingTab = class extends import_obsidian3.PluginSettingTab {
       cls: "setting-item-description"
     });
     cta.appendText(
-      "Thunderegg converts 30+ file types to clean Markdown \u2014 including meeting recordings, transcribed on-device \u2014 100% on your Mac, free. Get the Mac app at "
+      "Thunderegg converts 30+ file types to clean Markdown \u2014 including meeting recordings, transcribed on-device \u2014 100% on your Mac. This plugin is free; the Mac app is $19.95 once, after a free trial. Get it at "
     );
     cta.createEl("a", { href: "https://thunderegg.ai", text: "thunderegg.ai" });
     cta.appendText(".");

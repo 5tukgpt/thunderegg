@@ -31,7 +31,7 @@ export const AV_EXTENSIONS = new Set([
  * the engine's Markdown path is an importer, not a converter.
  */
 export const CONVERTIBLE = new Set([
-  "pdf", "docx", "doc", "rtf", "xlsx", "xls", "pptx", "html", "htm", "csv", "json",
+  "pdf", "docx", "doc", "rtf", "xlsx", "xls", "pptx", "html", "htm", "csv", "json", "jsonl", "txt",
   "eml", "msg", "png", "jpg", "jpeg", "tiff", "tif", "heic", "gif", "bmp", "webp",
   ...AV_EXTENSIONS,
 ]);
