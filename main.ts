@@ -121,6 +121,19 @@ export default class ThundereggPlugin extends Plugin {
     await this.checkThundereggAvailable();
     this.renderThundereggStatus();
 
+    /* ── Ribbon ──
+       Convert clipboard had NO entry point except the command palette: no ribbon icon, no
+       menu item, nothing to stumble over. It was documented, but as a nested sub-bullet, and
+       0.2.9 shipped better copy for it — copy is a workaround for discoverability, not a fix.
+       This is the fix. Only the clipboard command gets an icon: converting a file or folder
+       already has a right-click item, and a ribbon button for those would have nothing to act
+       on. `addRibbonIcon` is cleaned up by the Plugin base class on unload, so it needs no
+       registerEvent. The icon name is a Lucide name — verified present in the bundled set
+       against `file-down` and `git-fork`, two this plugin already renders. */
+    this.addRibbonIcon("clipboard-paste", "Thunderegg: Convert clipboard", () => {
+      void this.convertClipboard();
+    });
+
     /* ── File-explorer context menu ── */
     this.registerEvent(
       this.app.workspace.on("file-menu", (menu, file) => {

@@ -1220,6 +1220,9 @@ var _ThundereggPlugin = class _ThundereggPlugin extends import_obsidian3.Plugin 
     this.statusRefinery = this.addStatusBarItem();
     await this.checkThundereggAvailable();
     this.renderThundereggStatus();
+    this.addRibbonIcon("clipboard-paste", "Thunderegg: Convert clipboard", () => {
+      void this.convertClipboard();
+    });
     this.registerEvent(
       this.app.workspace.on("file-menu", (menu, file) => {
         if (file instanceof import_obsidian3.TFile && CONVERTIBLE.has(file.extension.toLowerCase())) {

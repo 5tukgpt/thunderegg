@@ -1,7 +1,7 @@
 {
   "id": "thunderegg",
   "name": "Thunderegg",
-  "version": "0.2.9",
+  "version": "0.2.10",
   "minAppVersion": "1.6.6",
   "description": "macOS only. Convert vault attachments — documents, images, even meeting recordings (transcribed on-device) — to Markdown. Or run \"Convert clipboard\" from the command palette to turn whatever you just copied into a note. Adds Grades, Bonds and Condensers.",
   "author": "Thunderegg",

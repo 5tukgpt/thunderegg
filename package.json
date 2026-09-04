@@ -1,6 +1,6 @@
 {
   "name": "thunderegg-obsidian",
-  "version": "0.2.9",
+  "version": "0.2.10",
   "description": "Convert attachments to Markdown inside Obsidian, on-device, via the Thunderegg engine.",
   "main": "main.js",
   "scripts": {
