@@ -7,6 +7,18 @@ Convert any attachment in your vault — PDF, Word, Excel, PowerPoint, email, im
 > plugin is the Obsidian half; the Thunderegg app does the converting, and it is what you buy.
 > [thunderegg.ai](https://thunderegg.ai)
 
+## Three ways in
+
+1. **Right-click a file** in the file explorer → *Convert to Markdown (Thunderegg)*.
+2. **Right-click a folder** → *Thunderegg: convert all attachments* (recursive).
+3. **⌘P → `Thunderegg: Convert clipboard`** — copy anything (a web page selection, an email,
+   a table), run the command, and Thunderegg converts it into a new note called
+   `Clipboard <date>.md` and opens it. Nothing to save to disk first.
+
+> The clipboard command is **command-palette only** — there is no ribbon icon and no menu
+> item for it, so it is easy to miss. It is the fastest way to get something you are reading
+> in a browser into your vault as clean Markdown.
+
 ## Features
 
 ### Conversion
