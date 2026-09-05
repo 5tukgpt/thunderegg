@@ -1,3 +1,57 @@
+# Thunderegg Obsidian plugin — Session Handoff · 0.2.9 + 0.2.10 SHIPPED — Convert clipboard finally has a way to be found
+**Date:** 2026-09-04 · **Branch:** master @ `5247887` · pushed · tag + GitHub release `0.2.10` published, assets byte-verified. Tree clean; released == committed.
+
+> Continues the entry below (same day). Its open thread #1 — *"committed but NOT released: the
+> README and manifest description"* — is **DONE**, shipped as 0.2.9. Its #3, the discoverability
+> gap, is **DONE** as 0.2.10.
+
+## Open threads (do these next)
+
+1. **No re-entrancy guard** on `convertFile` / `convertFolder` / `convertClipboard`. A second
+   click yields two notes and burns two of five trial credits. Known, deliberate, unfixed.
+2. **Canvas publish still defaults to `distillmd.dev`**, which 404s. The plugin's only
+   self-initiated network call. Unchanged.
+3. **The Browse-list description is still not ours to change** — `obsidianmd/obsidian-releases`
+   has PRs AND issues disabled and the file is bot-mirrored. See the entry below; do not spend
+   time on this again.
+
+## What changed
+
+- **`d9422c2` 0.2.9 — docs only, `main.js` byte-identical to 0.2.8.** Cut purely to deliver
+  `d0f7246`, which had been committed and was reaching nobody. Obsidian renders `manifest.json`
+  and `README.md` on the plugin's **detail page** — the screen someone reads immediately before
+  clicking Install — so those two files ARE a user-facing surface, and leaving them in the repo is
+  the same committed-is-not-released shape that let the Mac dmg advertise 10 Macs for nine days.
+- **`5247887` 0.2.10 — a ribbon icon for Convert clipboard.** The feature had NO entry point but
+  the command palette: no ribbon icon, no menu item, nothing to stumble over. 0.2.9 shipped better
+  copy for it, and copy only reaches someone who reads the copy. Only the clipboard command gets an
+  icon — file and folder conversion already have right-click items, and the ribbon is not
+  context-aware. `addRibbonIcon` is cleaned up by the `Plugin` base class, so no `registerEvent`.
+
+⭐ **Verified by James in a real vault**: the icon draws and the tooltip reads
+*"Thunderegg: Convert clipboard"*. That was the one thing no test here could check.
+
+## Watch-outs
+
+- **⚠️ An unknown Lucide icon name renders a BLANK button**, and nothing in 192 tests or a
+  typecheck catches it. Verify against the bundled set before shipping one. **The first method
+  returned 0 for `clipboard-paste` AND for `file-down`/`git-fork`, two icons this plugin
+  demonstrably renders** — a useless instrument, discarded rather than believed. The method that
+  works: `grep -a` the loose string in `/Applications/Obsidian.app/Contents/Resources/obsidian.asar`
+  and require the same signal as a known-good control. Then have a human look.
+- **⚠️ `0.2.10` sorts BELOW `0.2.9` under string comparison and ABOVE it under semver.** Obsidian
+  uses semver, so this is fine — but any tooling that sorts these as strings will silently strand
+  users on 0.2.9. Checked at release: GitHub's "Latest" badge resolved correctly.
+- **`versions.json` is at 11 keys for 11 releases, none missing.** That invariant is the thing
+  that was broken for 0.2.1-0.2.3 and silently resolved every Obsidian 1.4.0-1.6.5 user back to
+  0.2.0. README's procedure now says to add the key **unconditionally**; the old conditional
+  wording *"and versions.json if minAppVersion changed"* IS the bug shape.
+- Everything in the entry below still applies — especially that a fix applied to two of three call
+  sites reads exactly like a fix, and that Obsidian appends `/* nosourcemap */` to an installed
+  `main.js` so it is 18 bytes larger than the release asset and hashes differently.
+
+---
+
 # Thunderegg Obsidian plugin — Session Handoff · ⭐ 0.2.8 RELEASED **and verified by a human** — three tests, all passing · ⭐⭐ the Browse description is BOT-OWNED and unreachable: PRs are disabled on obsidian-releases
 **Date:** 2026-09-04 (arc runs 2026-09-03 → 2026-09-04) · **Branch:** master @ `d0f7246` · pushed · tag + GitHub release `0.2.8` published, assets byte-verified against the built tree.
 
