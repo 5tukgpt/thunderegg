@@ -7,7 +7,7 @@ import { App, Modal, Notice, Setting, TFile, normalizePath } from "obsidian";
 import {
   Canvas, PublishMeta, ProvenanceEntry,
   transformCanvas, redactionScan, buildSidecar,
-  checkForkMap, prepareForkImport, buildAttributionNote, buildForkReceipt,
+  checkForkMap, prepareForkImport, buildAttributionNote, buildForkReceipt, resolvePublishServer,
   SOURCE_TYPES, LICENSES, VISIBILITIES, AI_ASSISTED, SUMMARY_MIN, SUMMARY_MAX,
   type Visibility, type License, type SourceType, type ForkLineage, type AiAssisted,
 } from "./publish-core";
@@ -181,9 +181,13 @@ export class PublishModal extends Modal {
       this.issuesEl.createEl("p", { text: "✅ No issues.", cls: "setting-item-description" });
     }
 
-    const ready = blocks.length === 0 && this.ctx.token.length > 0;
+    // No server is the normal state today — say so on the button rather than after a click.
+    let noServer = "";
+    try { resolvePublishServer(this.ctx.baseUrl); } catch (e: unknown) { noServer = e instanceof Error ? e.message : String(e); }
+    const ready = blocks.length === 0 && this.ctx.token.length > 0 && !noServer;
     this.publishBtn.disabled = !ready;
-    this.publishBtn.title = this.ctx.token ? (blocks.length ? "Resolve the blocking issues above." : "") : "Connect a device token in Settings → Thunderegg first.";
+    this.publishBtn.title = noServer
+      || (this.ctx.token ? (blocks.length ? "Resolve the blocking issues above." : "") : "Connect a device token in Settings → Thunderegg first.");
 
     // Export needs no account — only that there are no blocking issues.
     this.exportBtn.disabled = blocks.length > 0;

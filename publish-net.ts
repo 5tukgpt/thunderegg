@@ -10,6 +10,7 @@ import { requestUrl } from "obsidian";
 import * as os from "os";
 import * as path from "path";
 import * as fs from "fs";
+import { resolvePublishServer } from "./publish-core";
 import type { DistillMapArtifact } from "./publish-core";
 
 /** App-support dir the Thunderegg engine already uses; token lives here, chmod 600. */
@@ -45,18 +46,15 @@ export interface PublishResponse {
   url: string;
 }
 
-function trimSlash(u: string): string {
-  return u.replace(/\/+$/, "");
-}
-
 /** POST a distill.map/0.2 artifact. Uses requestUrl (bypasses CORS, bearer in header). */
 export async function publishArtifact(
   baseUrl: string,
   token: string,
   artifact: DistillMapArtifact,
 ): Promise<PublishResponse> {
+  const server = resolvePublishServer(baseUrl);   // throws before any request when unset/retired
   const res = await requestUrl({
-    url: `${trimSlash(baseUrl)}/api/maps`,
+    url: `${server}/api/maps`,
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -80,8 +78,9 @@ export async function publishArtifact(
 
 /** Fetch a public/forkable map's artifact (visibility re-checked server-side). */
 export async function fetchForkFile(baseUrl: string, mapId: string): Promise<unknown> {
+  const server = resolvePublishServer(baseUrl);
   const res = await requestUrl({
-    url: `${trimSlash(baseUrl)}/api/maps/${encodeURIComponent(mapId)}/forkfile`,
+    url: `${server}/api/maps/${encodeURIComponent(mapId)}/forkfile`,
     method: "GET",
     throw: false,
   });

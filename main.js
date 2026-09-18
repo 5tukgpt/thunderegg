@@ -174,6 +174,26 @@ function referencingCondensers(bonds, filePath, threshold) {
     return [];
   return [...incoming].filter((src) => isCondenser(bonds, src, threshold));
 }
+var SingleFlight = class {
+  constructor() {
+    this.inFlight = false;
+  }
+  get busy() {
+    return this.inFlight;
+  }
+  async run(task, onBusy) {
+    if (this.inFlight) {
+      onBusy();
+      return void 0;
+    }
+    this.inFlight = true;
+    try {
+      return await task();
+    } finally {
+      this.inFlight = false;
+    }
+  }
+};
 
 // publish-ui.ts
 var import_obsidian2 = require("obsidian");
@@ -210,6 +230,29 @@ var LICENSES = [
   "proprietary",
   "unknown"
 ];
+var RETIRED_PUBLISH_HOSTS = ["distillmd.dev", "www.distillmd.dev"];
+var NO_PUBLISH_SERVER = "No publish server is set. Thunderegg has no public map server yet \u2014 use Export to write a shareable file instead, or enter your own server in Settings \u2192 Thunderegg.";
+function isRetiredPublishServer(baseUrl) {
+  try {
+    return RETIRED_PUBLISH_HOSTS.includes(new URL((baseUrl ?? "").trim()).hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+function resolvePublishServer(baseUrl) {
+  const u = (baseUrl ?? "").trim().replace(/\/+$/, "");
+  if (!u)
+    throw new Error(NO_PUBLISH_SERVER);
+  let host;
+  try {
+    host = new URL(u).hostname.toLowerCase();
+  } catch {
+    throw new Error(`The publish server URL is not valid: ${u}`);
+  }
+  if (RETIRED_PUBLISH_HOSTS.includes(host))
+    throw new Error(NO_PUBLISH_SERVER);
+  return u;
+}
 var DEFAULT_BLOCKED_ZONES = ["#health", "#work", "#client", "#private"];
 function firstLine(text) {
   for (const raw of text.split("\n")) {
@@ -761,12 +804,10 @@ function clearDeviceToken() {
 function hasDeviceToken() {
   return readDeviceToken().length > 0;
 }
-function trimSlash(u) {
-  return u.replace(/\/+$/, "");
-}
 async function publishArtifact(baseUrl, token, artifact) {
+  const server = resolvePublishServer(baseUrl);
   const res = await (0, import_obsidian.requestUrl)({
-    url: `${trimSlash(baseUrl)}/api/maps`,
+    url: `${server}/api/maps`,
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -789,8 +830,9 @@ async function publishArtifact(baseUrl, token, artifact) {
   return res.json;
 }
 async function fetchForkFile(baseUrl, mapId) {
+  const server = resolvePublishServer(baseUrl);
   const res = await (0, import_obsidian.requestUrl)({
-    url: `${trimSlash(baseUrl)}/api/maps/${encodeURIComponent(mapId)}/forkfile`,
+    url: `${server}/api/maps/${encodeURIComponent(mapId)}/forkfile`,
     method: "GET",
     throw: false
   });
@@ -1014,9 +1056,15 @@ var PublishModal = class extends import_obsidian2.Modal {
     if (!blocks.length && !warns.length) {
       this.issuesEl.createEl("p", { text: "\u2705 No issues.", cls: "setting-item-description" });
     }
-    const ready = blocks.length === 0 && this.ctx.token.length > 0;
+    let noServer = "";
+    try {
+      resolvePublishServer(this.ctx.baseUrl);
+    } catch (e) {
+      noServer = e instanceof Error ? e.message : String(e);
+    }
+    const ready = blocks.length === 0 && this.ctx.token.length > 0 && !noServer;
     this.publishBtn.disabled = !ready;
-    this.publishBtn.title = this.ctx.token ? blocks.length ? "Resolve the blocking issues above." : "" : "Connect a device token in Settings \u2192 Thunderegg first.";
+    this.publishBtn.title = noServer || (this.ctx.token ? blocks.length ? "Resolve the blocking issues above." : "" : "Connect a device token in Settings \u2192 Thunderegg first.");
     this.exportBtn.disabled = blocks.length > 0;
     this.exportBtn.title = blocks.length ? "Resolve the blocking issues above." : "Write a shareable map file into your vault \u2014 no account needed.";
   }
@@ -1192,11 +1240,11 @@ var DEFAULT_SETTINGS = {
   showGradeBadges: true,
   showBondCounts: true,
   showCondenserLinks: true,
-  // The community publish server has NOT been redeployed since the Thunderegg rebrand — this
-  // legacy host currently 404s, and thunderegg.ai is a static site with no /api. Deliberately
-  // left pointing at the legacy zone (a clean HTTP failure) rather than re-pointed (a JSON
-  // parse failure against marketing HTML). Revisit when/if the publish backend ships.
-  serverBaseUrl: "https://distillmd.dev",
+  // There is no public map server. Empty means "none": resolvePublishServer() refuses before any
+  // request is made, and Export (a file, no network) still works. This was "https://distillmd.dev",
+  // a host that 404s — the plugin's only self-initiated network call went to a dead server. A saved
+  // setting still holding that host is treated as unset (RETIRED_PUBLISH_HOSTS).
+  serverBaseUrl: "",
   blockedZonesCsv: "#health, #work, #client, #private",
   defaultVisibility: "private",
   defaultLicense: "user-generated"
@@ -1211,6 +1259,10 @@ var _ThundereggPlugin = class _ThundereggPlugin extends import_obsidian3.Plugin 
     this.lastForkReceipt = null;
     /** Monotonic suffix so two conversions never share a capture file. */
     this.noteOutSeq = 0;
+    /* Every entry point — ribbon, palette, both right-click menus — reaches conversion through
+       these three, so the guard lives HERE and not at the call sites. Guarding call sites is how a
+       fix lands on two of three of them. */
+    this.conversions = new SingleFlight();
   }
   /* ── Lifecycle ──────────────────────────────────────────────── */
   async onload() {
@@ -1457,7 +1509,21 @@ var _ThundereggPlugin = class _ThundereggPlugin extends import_obsidian3.Plugin 
     }
     return out;
   }
-  async convertFile(file) {
+  guarded(task) {
+    return this.conversions.run(task, () => {
+      new import_obsidian3.Notice("Thunderegg: a conversion is already running \u2014 this one was not started.");
+    }).then(() => void 0);
+  }
+  convertFile(file) {
+    return this.guarded(() => this.runConvertFile(file));
+  }
+  convertFolder(folder) {
+    return this.guarded(() => this.runConvertFolder(folder));
+  }
+  convertClipboard() {
+    return this.guarded(() => this.runConvertClipboard());
+  }
+  async runConvertFile(file) {
     const engine = this.settings.enginePath;
     const full = this.absPath(file);
     const notice = new import_obsidian3.Notice(
@@ -1512,7 +1578,7 @@ var _ThundereggPlugin = class _ThundereggPlugin extends import_obsidian3.Plugin 
       console.error("[Thunderegg]", e);
     }
   }
-  async convertFolder(folder) {
+  async runConvertFolder(folder) {
     const targets = [];
     const walk = (f) => {
       if (f instanceof import_obsidian3.TFile && CONVERTIBLE.has(f.extension.toLowerCase())) {
@@ -1576,7 +1642,7 @@ var _ThundereggPlugin = class _ThundereggPlugin extends import_obsidian3.Plugin 
   /* ═════════════════════════════════════════════════════════════════
      Clipboard conversion
      ═════════════════════════════════════════════════════════════════ */
-  async convertClipboard() {
+  async runConvertClipboard() {
     let clipHtml = "";
     let clipText = "";
     try {
@@ -2020,8 +2086,10 @@ var ThundereggSettingTab = class extends import_obsidian3.PluginSettingTab {
       cls: "setting-item-description",
       text: "Publish a Canvas as a concept map to the server configured below. Nothing is sent unless you explicitly publish. Conversion, OCR and transcription all run on your Mac. If you have connected a cloud model in the Thunderegg app, the AI enrichment step sends part of each note to that provider \u2014 mark a vault Local in Thunderegg to keep everything on-device."
     });
-    new import_obsidian3.Setting(containerEl).setName("Server URL").setDesc("Where maps are published.").addText(
-      (t) => t.setValue(this.plugin.settings.serverBaseUrl).onChange(async (v) => {
+    new import_obsidian3.Setting(containerEl).setName("Server URL").setDesc(
+      "Where maps are published. Thunderegg has no public map server yet, so this is empty and Publish makes no network request. Export works without one."
+    ).addText(
+      (t) => t.setPlaceholder("https://your-map-server.example").setValue(isRetiredPublishServer(this.plugin.settings.serverBaseUrl) ? "" : this.plugin.settings.serverBaseUrl).onChange(async (v) => {
         this.plugin.settings.serverBaseUrl = v.trim() || DEFAULT_SETTINGS.serverBaseUrl;
         await this.plugin.saveSettings();
       })

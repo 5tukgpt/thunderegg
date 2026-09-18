@@ -1,3 +1,39 @@
+# Thunderegg Obsidian plugin — Session Handoff · both known gaps FIXED on master — ⚠️ COMMITTED, NOT RELEASED
+**Date:** 2026-09-18 · **Branch:** master · pushed · **manifest still 0.2.10 on purpose** (see below). 200 tests / typecheck / build / preland gate green.
+
+> Closes open threads #1 and #2 of the entry below. #3 (the bot-owned Browse description) stands.
+
+## Open threads (do these next)
+
+1. **⭐ RELEASE IT as 0.2.11 — after James clicks it once in a real vault.** Nothing here has run
+   inside Obsidian: `main.ts` has no unit tests, so the wiring is proven by typecheck + the bundle
+   only. The guard sits in front of EVERY conversion, so a wiring mistake would stop conversion for
+   every auto-updating user — that is why it was not released blind. Test: copy `main.js` into a
+   vault's `.obsidian/plugins/thunderegg/`, reload, (a) convert a PDF — works; (b) double-click
+   Convert on a long file — ONE note and a "conversion is already running" notice; (c) open a
+   Canvas → Publish — the button is disabled and its tooltip says no server is set; Export works.
+   ⚠️ **Do NOT bump `manifest.json` without cutting the release in the same breath** — Obsidian
+   reads the version from the default branch's manifest and then fetches THAT release; a bumped
+   manifest with no release breaks updates for everyone. Add the `versions.json` key unconditionally.
+
+## What changed
+
+- **No double conversion.** `SingleFlight` (`core.ts`, tested incl. release-after-throw). The three
+  public `convert*` methods are now thin guarded wrappers over `runConvert*`, so all five call
+  sites (ribbon, palette x2, both right-click menus) are covered at once — guarding call sites is
+  the "fixed two of three" disease this repo already caught once. Global, not per-file: a folder
+  run overlaps the files in it and the engine counts trial credits per batch. A second click does
+  not queue; it shows a notice and starts nothing.
+- **No call to a dead server.** Default `serverBaseUrl` is now `""`. `resolvePublishServer()`
+  (`publish-core.ts`, tested) throws a readable error BEFORE any request when the server is empty,
+  malformed, or a retired host — so existing installs with `https://distillmd.dev` saved in
+  `data.json` stop calling it without a migration. Both network functions in `publish-net.ts` go
+  through it; the Publish button is disabled with the reason; Settings shows the field empty with
+  a placeholder. Look-alike hosts (`notdistillmd.dev`, `distillmd.dev.example.com`) pass — tested.
+  Export (file, no network) is untouched.
+
+---
+
 # Thunderegg Obsidian plugin — Session Handoff · 0.2.9 + 0.2.10 SHIPPED — Convert clipboard finally has a way to be found
 **Date:** 2026-09-04 · **Branch:** master @ `5247887` · pushed · tag + GitHub release `0.2.10` published, assets byte-verified. Tree clean; released == committed.
 

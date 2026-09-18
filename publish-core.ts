@@ -41,6 +41,33 @@ export const LICENSES = [
 export type License = (typeof LICENSES)[number];
 
 /** Tags whose presence blocks a publish unless the user clears the zone. */
+/** Hosts that were once the default publish server and no longer exist. A saved setting still
+ *  holding one is treated as unset, so existing installs stop calling a dead host without
+ *  anyone having to edit data.json. */
+export const RETIRED_PUBLISH_HOSTS: readonly string[] = ["distillmd.dev", "www.distillmd.dev"];
+
+export const NO_PUBLISH_SERVER =
+  "No publish server is set. Thunderegg has no public map server yet — use Export to write a " +
+  "shareable file instead, or enter your own server in Settings → Thunderegg.";
+
+/** True when a saved server value is one of the retired defaults (shown as empty in Settings). */
+export function isRetiredPublishServer(baseUrl: string): boolean {
+  try { return RETIRED_PUBLISH_HOSTS.includes(new URL((baseUrl ?? "").trim()).hostname.toLowerCase()); }
+  catch { return false; }
+}
+
+/** The base URL to publish to, slash-trimmed — or a thrown, user-readable error when there is
+ *  none. Called before ANY network request, so an unset server makes no request at all. */
+export function resolvePublishServer(baseUrl: string): string {
+  const u = (baseUrl ?? "").trim().replace(/\/+$/, "");
+  if (!u) throw new Error(NO_PUBLISH_SERVER);
+  let host: string;
+  try { host = new URL(u).hostname.toLowerCase(); }
+  catch { throw new Error(`The publish server URL is not valid: ${u}`); }
+  if (RETIRED_PUBLISH_HOSTS.includes(host)) throw new Error(NO_PUBLISH_SERVER);
+  return u;
+}
+
 export const DEFAULT_BLOCKED_ZONES = ["#health", "#work", "#client", "#private"];
 
 /* ═══════════════════════════════════════════════════════════════════

@@ -13,11 +13,12 @@ import {
   isTrialExhaustedError, isUnlicensedError, stemPath,
   BondGraph, emptyBondGraph, buildBondGraph,
   bondCount, isCondenser, referencingCondensers,
+  SingleFlight,
 } from "./core";
 import type { Canvas, Visibility, License, ForkLineage } from "./publish-core";
 import { PublishModal, importForkedMap, forkMapFileIntoVault, ConfirmForkModal, type PublishContext } from "./publish-ui";
 import { readDeviceToken, writeDeviceToken, clearDeviceToken, hasDeviceToken } from "./publish-net";
-import { parseSidecarSignature, parseLineageFrontmatter } from "./publish-core";
+import { parseSidecarSignature, parseLineageFrontmatter, isRetiredPublishServer } from "./publish-core";
 import { signingKeyFingerprint, verifyBytes, keyFingerprint } from "./publish-sign";
 
 const execAsync = promisify(exec);
@@ -81,11 +82,11 @@ const DEFAULT_SETTINGS: ThundereggSettings = {
   showGradeBadges: true,
   showBondCounts: true,
   showCondenserLinks: true,
-  // The community publish server has NOT been redeployed since the Thunderegg rebrand — this
-  // legacy host currently 404s, and thunderegg.ai is a static site with no /api. Deliberately
-  // left pointing at the legacy zone (a clean HTTP failure) rather than re-pointed (a JSON
-  // parse failure against marketing HTML). Revisit when/if the publish backend ships.
-  serverBaseUrl: "https://distillmd.dev",
+  // There is no public map server. Empty means "none": resolvePublishServer() refuses before any
+  // request is made, and Export (a file, no network) still works. This was "https://distillmd.dev",
+  // a host that 404s — the plugin's only self-initiated network call went to a dead server. A saved
+  // setting still holding that host is treated as unset (RETIRED_PUBLISH_HOSTS).
+  serverBaseUrl: "",
   blockedZonesCsv: "#health, #work, #client, #private",
   defaultVisibility: "private",
   defaultLicense: "user-generated",
@@ -396,7 +397,20 @@ export default class ThundereggPlugin extends Plugin {
     return out;
   }
 
-  async convertFile(file: TFile): Promise<void> {
+  /* Every entry point — ribbon, palette, both right-click menus — reaches conversion through
+     these three, so the guard lives HERE and not at the call sites. Guarding call sites is how a
+     fix lands on two of three of them. */
+  private readonly conversions = new SingleFlight();
+  private guarded(task: () => Promise<void>): Promise<void> {
+    return this.conversions.run(task, () => {
+      new Notice("Thunderegg: a conversion is already running — this one was not started.");
+    }).then(() => undefined);
+  }
+  convertFile(file: TFile): Promise<void> { return this.guarded(() => this.runConvertFile(file)); }
+  convertFolder(folder: TFolder): Promise<void> { return this.guarded(() => this.runConvertFolder(folder)); }
+  convertClipboard(): Promise<void> { return this.guarded(() => this.runConvertClipboard()); }
+
+  private async runConvertFile(file: TFile): Promise<void> {
     const engine = this.settings.enginePath;
     const full   = this.absPath(file);
     const notice = new Notice(
@@ -475,7 +489,7 @@ export default class ThundereggPlugin extends Plugin {
     }
   }
 
-  async convertFolder(folder: TFolder): Promise<void> {
+  private async runConvertFolder(folder: TFolder): Promise<void> {
     const targets: TFile[] = [];
     const walk = (f: TAbstractFile) => {
       if (f instanceof TFile && CONVERTIBLE.has(f.extension.toLowerCase())) {
@@ -557,7 +571,7 @@ export default class ThundereggPlugin extends Plugin {
      Clipboard conversion
      ═════════════════════════════════════════════════════════════════ */
 
-  async convertClipboard(): Promise<void> {
+  private async runConvertClipboard(): Promise<void> {
     /* Read clipboard — prefer HTML (richer), fall back to plain text. */
     let clipHtml = "";
     let clipText = "";
@@ -1155,9 +1169,14 @@ class ThundereggSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Server URL")
-      .setDesc("Where maps are published.")
+      .setDesc(
+        "Where maps are published. Thunderegg has no public map server yet, so this is empty and " +
+        "Publish makes no network request. Export works without one.",
+      )
       .addText((t) =>
-        t.setValue(this.plugin.settings.serverBaseUrl).onChange(async (v) => {
+        t.setPlaceholder("https://your-map-server.example")
+         .setValue(isRetiredPublishServer(this.plugin.settings.serverBaseUrl) ? "" : this.plugin.settings.serverBaseUrl)
+         .onChange(async (v) => {
           this.plugin.settings.serverBaseUrl = v.trim() || DEFAULT_SETTINGS.serverBaseUrl;
           await this.plugin.saveSettings();
         }),

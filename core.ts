@@ -227,3 +227,20 @@ export function referencingCondensers(
   if (!incoming) return [];
   return [...incoming].filter((src) => isCondenser(bonds, src, threshold));
 }
+
+/* ── One conversion at a time ─────────────────────────────────────── */
+
+/** Runs at most one task at a time. A second `run` while one is in flight does NOT queue — it
+ *  calls `onBusy` and resolves undefined. A double-click on Convert used to start two engine
+ *  runs: two notes, and two of a trial user's five credits. Global rather than per-file because
+ *  a folder run and a file inside it overlap, and the engine counts trial credits per batch. */
+export class SingleFlight {
+  private inFlight = false;
+  get busy(): boolean { return this.inFlight; }
+  async run<T>(task: () => Promise<T>, onBusy: () => void): Promise<T | undefined> {
+    if (this.inFlight) { onBusy(); return undefined; }
+    this.inFlight = true;
+    try { return await task(); }
+    finally { this.inFlight = false; }   // released on a throw too, or one failure locks it forever
+  }
+}
