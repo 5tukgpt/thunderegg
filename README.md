@@ -31,6 +31,7 @@ Convert any attachment in your vault — PDF, Word, Excel, PowerPoint, email, im
 - Output is written as `<file>.md` next to the source, with `title/source/type/created/tags` frontmatter.
 - **Recordings become meeting summaries:** drop an audio or video file (mp3, m4a, wav, aiff, aac, flac, opus, mp4, mov, m4v, mkv, webm — Zoom, OBS, Discord and
   browser recordings included) and the engine transcribes it on-device and writes a structured summary — action items, decisions, notable quotes. Transcription takes a few minutes per recording; nothing is uploaded.
+- **To record a meeting, use the Mac app.** This plugin converts recordings that already exist; it does not record. Click the microphone icon in the macOS menu bar → **Start Recording** (macOS 15 or later), then convert the saved file here or let the app write the note.
 
 ### Refinery
 Enable the Refinery in settings for Thunderegg's knowledge-management layer. It adds three concepts:

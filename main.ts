@@ -1257,5 +1257,12 @@ class ThundereggSettingTab extends PluginSettingTab {
     );
     cta.createEl("a", { href: "https://thunderegg.ai", text: "thunderegg.ai" });
     cta.appendText(".");
+    containerEl.createEl("p", {
+      cls: "setting-item-description",
+      text:
+        "To record a meeting, use the Mac app: the microphone icon in the macOS menu bar → Start " +
+        "Recording (macOS 15 or later). This plugin converts recordings that already exist; it " +
+        "does not record.",
+    });
   }
 }
