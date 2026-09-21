@@ -1,3 +1,32 @@
+# Thunderegg Obsidian plugin — ⛔ DELISTED from the Obsidian community directory since 2026-09-04 — nobody noticed for 17 days
+**Date:** 2026-09-21 · found while fetching the download count for James.
+
+- **Fact.** `thunderegg` is absent from the live source of truth
+  (`community.obsidian.md/assets/community-plugins.json`, 7,894 entries, checked 2026-09-21) and
+  from its hourly mirror `obsidianmd/obsidian-releases`. Mirror history: the entry was ADDED in the
+  2026-08-26 mirror commit `2ee8425` and REMOVED in the 2026-09-04 commit `96702d2`; it left
+  `community-plugin-stats.json` on 09-06. It is NOT in `community-plugins-removed.json` or the
+  deprecation file, so there is no public reason on record.
+- **Consequence.** New users cannot find or install it from Obsidian's plugin browser. Existing
+  installs keep working and still auto-update (updates come from this repo's releases, not the
+  catalog), which is exactly why three releases since then looked healthy. **GTM D2 (the Obsidian
+  forum post) is blocked until this is resolved** — a showcase post for a plugin nobody can install.
+- **Last known download count: 141** (obsidianstats.com, snapshot taken at 0.2.8, so ~09-03).
+  GTM-PLAN's "87" is older. There is no live number while delisted.
+- **Cause: UNKNOWN. Do not pick one.** What happened on 09-04: 0.2.9 and 0.2.10 were released within
+  three hours; a prior session pushed to the `5tukgpt/obsidian-releases` fork and prepared-then-
+  deleted a PR branch. One thing that IS out of spec regardless: the manifest `description` is
+  **254 characters** and Obsidian's submission rule is 250 max (it was 259 when the plugin was
+  listed on 08-26, so length alone did not prevent listing). The catalog is now fed from a portal
+  at community.obsidian.md with developer sign-in; the reason, if any is given, will be there or in
+  email to the account that submitted the plugin.
+- **Next (James):** sign in at community.obsidian.md, look at the plugin's status, and check
+  5tukgpt@gmail.com for mail from Obsidian around 2026-09-04. Then tell the next session what it
+  says. **Next (session, once the reason is known):** fix it, trim the description to <= 250 in the
+  same release, resubmit.
+
+---
+
 # Thunderegg Obsidian plugin — Session Handoff · 0.2.11 RELEASED
 **Date:** 2026-09-21 · **Branch:** master @ release commit `0e03092` · tag + GitHub release `0.2.11`, marked Latest, three assets byte-identical to the tree, `versions.json` at 12 keys for 12 releases.
 
