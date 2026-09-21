@@ -1,3 +1,23 @@
+# Thunderegg Obsidian plugin — Session Handoff · 0.2.11 RELEASED
+**Date:** 2026-09-21 · **Branch:** master @ release commit `0e03092` · tag + GitHub release `0.2.11`, marked Latest, three assets byte-identical to the tree, `versions.json` at 12 keys for 12 releases.
+
+> Closes open thread #1 of the entry below ("release it after James clicks it once"). James said
+> release without the click-test, so the gap was closed another way first.
+
+- **The wiring was PROVEN against the built bundle, not just typechecked.** `main.js` was loaded in
+  Node with a stubbed `obsidian` module (Plugin, Notice, TFile...), `runEngine` replaced by a
+  promise that never resolves, and `convertFile` fired twice. **0.2.11 bundle: 1 engine run and the
+  "already running" notice; after the first finishes, a third click runs normally. Released 0.2.10
+  bundle (control): 2 engine runs from the same double-fire.** Default publish server read back as
+  `""`. The harness lived in `/tmp/te-smoke` and is disposable; rebuilding it is ~40 lines. This is
+  the first time anything in `main.ts` has been exercised outside Obsidian, and the pattern is
+  worth reusing before any future release that touches it.
+- Still unverified by eye: the disabled Publish button's tooltip, and the new "to record a meeting,
+  use the Mac app" line at the bottom of Settings. Both are cosmetic; neither can block conversion.
+- Open threads carried: the Browse-list description is bot-owned and unreachable (do not retry).
+
+---
+
 # Thunderegg Obsidian plugin — Session Handoff · both known gaps FIXED on master — ⚠️ COMMITTED, NOT RELEASED
 **Date:** 2026-09-18 · **Branch:** master · pushed · **manifest still 0.2.10 on purpose** (see below). 200 tests / typecheck / build / preland gate green.
 
