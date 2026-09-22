@@ -1,3 +1,24 @@
+# Thunderegg Obsidian plugin — ✅ RELISTED · the cause is confirmed: the 254-char description
+**Date:** 2026-09-22 · read from James's signed-in community.obsidian.md account (he had already claimed the plugin and connected GitHub).
+
+- **Cause, verbatim from the 0.2.8 (Sep 4) and 0.2.10 (Sep 5) reviews, both `Failed`:**
+  `Error — Plugin description exceeds the 250 character limit (currently 254 characters) — manifest.json:6`.
+  The description grew past 250 in `d0f7246` (2026-09-03); the previously listed 0.2.7 (Sep 1) was
+  `Completed`. One Error = not installable. The guess in the entry below was right.
+- **0.2.12 review (Sep 22): `Completed`, 0 Errors.** Public page shows **Add to Obsidian**, Health
+  **Excellent**, **164 downloads**, 13 releases. The plugin is installable again. **GTM D2 is unblocked.**
+- **Remaining review items, none blocking:** Warnings for `fs` access, `child_process`, ~600
+  `@typescript-eslint/no-unsafe-*` lines (the `obsidian` types are loose; cosmetic), and one
+  `PluginSettingTab does not implement getSettingDefinitions()` (Obsidian 1.13+ settings search).
+  Recommendations: GitHub artifact attestations for release assets; unused `engine` at main.ts:414;
+  clipboard access. Worth a cleanup release someday; not now.
+- **Process lesson:** every release is re-scanned and one Error delists silently. Before any future
+  release: `len(description) <= 250`, and use **Review branch** on the account page. A local guard
+  belongs in `scripts/preland-gate.sh` — added below if this session got to it.
+- Baseline for launch: **164 plugin downloads, 0 Lemon Squeezy orders** (2026-09-22).
+
+---
+
 # Thunderegg Obsidian plugin — 0.2.12 RELEASED to get RELISTED · the resubmission itself is James-only
 **Date:** 2026-09-21 · **Branch:** master · pushed · tag + release `0.2.12`, Latest, assets byte-identical; `versions.json` 13 keys for 13 releases. `main.js` is byte-identical to 0.2.11.
 

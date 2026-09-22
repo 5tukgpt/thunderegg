@@ -11,6 +11,15 @@ export TMPDIR="${TMPDIR:-/tmp}"   # sandbox inode safety; harmless on macOS
 cd "$(git rev-parse --show-toplevel)" || exit 2
 fail=0
 
+# 0. the directory delists on ONE manifest error, silently (0.2.8-0.2.11 were unlistable for a
+#    254-char description, 2026-09-04 -> 09-22). Its rules: <= 250 chars, ends with a period.
+_dlen=$(node -e 'const d=require("./manifest.json").description;process.stdout.write(String(d.length)+(d.endsWith(".")?"":" NOPERIOD"))')
+case "$_dlen" in
+  *NOPERIOD*) echo "GATE FAIL: manifest description must end with a period"; fail=1 ;;
+  *) if [ "$_dlen" -gt 250 ]; then echo "GATE FAIL: manifest description is $_dlen chars (directory limit 250)"; fail=1
+     else echo "ok: manifest description $_dlen chars, ends with a period"; fi ;;
+esac
+
 # 1. never commit secrets or local plugin data (main.js IS committed — Obsidian
 #    ships the built bundle — so it is deliberately NOT guarded here).
 if git diff --cached --name-only | grep -qE '(^|/)(\.env|data\.json)$|\.(pem|key)$'; then
