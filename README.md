@@ -7,6 +7,33 @@ Convert any attachment in your vault — PDF, Word, Excel, PowerPoint, email, im
 > plugin is the Obsidian half; the Thunderegg app does the converting, and it is what you buy.
 > [thunderegg.ai](https://thunderegg.ai)
 
+## Disclosures
+
+Stated plainly, in the order Obsidian's developer policies list them.
+
+- **Payment.** This plugin is free. It drives the Thunderegg app for macOS, which costs $19.95 once
+  after a free trial of 5 conversions. Without the app the plugin converts nothing.
+- **Account.** None. There is no Thunderegg account. A purchase gives you a licence key, entered
+  in the app.
+- **Closed-source code.** This plugin is MIT-licensed and everything it runs inside Obsidian is in
+  this repository. The Thunderegg app it calls is closed source and is installed separately, by
+  you, from [thunderegg.ai](https://thunderegg.ai). The plugin never downloads, installs or updates
+  it.
+- **Running a local program.** To convert a file the plugin runs the app's converter,
+  `~/Library/Application Support/MarkItDownDroplet/convert.sh`, through Node's `child_process`.
+  This is why the plugin is desktop-only and macOS-only.
+- **Files outside your vault.** The plugin reads and writes notes inside your vault. It reads one
+  path outside it, the converter above, and keeps the optional Canvas-publishing device token in
+  the app's support folder rather than in your vault, so the token is never synced or shared with
+  the vault.
+- **Network use.** The plugin makes **no network requests by default**. The optional Canvas
+  publish and fork commands contact a map server only if you enter one in Settings, and only when
+  you run them. No public server exists today, so the field ships empty. Separately, if you
+  connect a cloud AI provider inside the Thunderegg app, the app, not this plugin, sends note text
+  to that provider to write summaries. Leave it unconnected, or mark the vault Local in the app,
+  and nothing leaves your Mac.
+- **Telemetry and ads.** None, client-side or server-side.
+
 ## Three ways in
 
 1. **Right-click a file** in the file explorer → *Convert to Markdown (Thunderegg)*.
@@ -28,7 +55,7 @@ Convert any attachment in your vault — PDF, Word, Excel, PowerPoint, email, im
   - `Thunderegg: Convert file` — convert the active attachment
   - `Thunderegg: Convert clipboard` — paste clipboard content (HTML or text), run it through Thunderegg, and create a new note
 - **Status bar:** live indicator showing whether the Thunderegg engine is available (🟢 Ready / 🔴 Unavailable)
-- Output is written as `<file>.md` next to the source, with `title/source/type/created/tags` frontmatter.
+- Output is written next to the source as `report.md` for `report.pdf` (or `report.pdf.md` when that name is taken), with `title/source/type/created/tags` frontmatter.
 - **Recordings become meeting summaries:** drop an audio or video file (mp3, m4a, wav, aiff, aac, flac, opus, mp4, mov, m4v, mkv, webm — Zoom, OBS, Discord and
   browser recordings included) and the engine transcribes it on-device and writes a structured summary — action items, decisions, notable quotes. Transcription takes a few minutes per recording; nothing is uploaded.
 - **To record a meeting, use the Mac app.** This plugin converts recordings that already exist; it does not record. Click the microphone icon in the macOS menu bar → **Start Recording** (macOS 15 or later), then convert the saved file here or let the app write the note.
@@ -93,7 +120,8 @@ The Refinery reads from Obsidian's `metadataCache.resolvedLinks` to build the bo
 ### Publish & Community (optional, off by default — and the one feature that CAN upload)
 The plugin can publish an Obsidian **Canvas** as a signed concept map to a server you
 configure (Settings → Publish & Community), and import maps others share via
-`obsidian://distill-fork` links. This is the only network call **the plugin itself** makes:
+`obsidian://distill-fork` links. No server is configured by default, so out of the box the plugin
+makes no network call at all. Once you set one, this is the only network call **the plugin itself** makes:
 nothing is sent by the plugin unless you explicitly run a Publish command, publishing sends
 only the selected Canvas (after a redaction scan for blocked tags), and the device token is
 stored outside your vault.
@@ -137,7 +165,7 @@ The plugin is listed in the official Obsidian directory as `thunderegg`. To ship
 > plugin executes a local helper script; keep that disclosure if you edit copy.
 
 ## Status
-v0.2.7 — listed in the official Obsidian community directory. On top of the v0.1.0
+v0.2.12. On top of the v0.1.0
 conversion features: the Refinery (rock-ladder grades with permanent legacy-name reads),
 audio/video → on-device meeting summaries, `.doc`/`.rtf` support, vault-aware bond
 discovery (`DISTILL_VAULT_PATH`), clipboard conversion, status-bar indicators, and the
