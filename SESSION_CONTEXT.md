@@ -1,3 +1,52 @@
+# Thunderegg Obsidian plugin — 0.2.12 RELEASED to get RELISTED · the resubmission itself is James-only
+**Date:** 2026-09-21 · **Branch:** master · pushed · tag + release `0.2.12`, Latest, assets byte-identical; `versions.json` 13 keys for 13 releases. `main.js` is byte-identical to 0.2.11.
+
+> Follows the delisting entry below. The cause is STILL unknown — it is visible only to the
+> signed-in developer — but how the directory works is now known, and every outside-checkable
+> cause has been removed.
+
+## How the directory works now (read from Obsidian's own docs, 2026-09-21)
+
+- The catalog is fed from **community.obsidian.md**, not pull requests. Developers sign in with an
+  Obsidian account, **connect GitHub**, then **claim** existing plugins or add new ones.
+- **After EVERY release the directory re-scans**: Manifest, Releases, Source code, **Build
+  verification** (it runs the first of `build` / `build:plugin` / `compile` and checks the output
+  matches the released `main.js`). Results are Error / Warning / Recommendation / Pass.
+  **"Your plugin won't be installable from within Obsidian until any errors are resolved."** So a
+  release can delist the plugin. 0.2.9 and 0.2.10 both shipped on 2026-09-04, the day it vanished.
+- Profile → **Action required notifications** sends an email when an entry has failures. If James
+  has never signed in, the plugin is unclaimed and nobody was ever told.
+- Fixes must arrive as **a new GitHub release with an incremented version**. **Review branch** on
+  the entry's page previews a scan against any branch or SHA without a release — use it next time
+  BEFORE releasing.
+
+## What 0.2.12 fixed (all checkable from outside)
+
+- **Description**: was 254 chars with em-dashes and curly-free quotes; the rules are 250 max, end
+  with a period, no emoji or special characters. Now 248 chars, pure ASCII, and says the app is required.
+- **README `## Disclosures`**: one section, in the order of Obsidian's developer policies — payment,
+  account, **closed-source code** (the Mac app; policy says "handled case by case", so this is the
+  one most likely to need a human conversation), running a local program, files outside the vault
+  (verified: the device token lives in the app-support dir, `publish-net.ts`), network use
+  (none by default since 0.2.11), telemetry/ads (none).
+- **Build verification reproduced**: a clean public clone + `npm ci` + `npm run build` yields a
+  `main.js` byte-identical to the committed file AND to the release asset. GitHub reports the repo
+  PUBLIC with an MIT licence.
+- ⚠️ A `cd` into a scratch path failed mid-session and `npm ci` + `npm run build` ran in the LIVE
+  repo; `gh repo clone` dropped a stray `thunderegg/` clone inside it. Verified harmless (only
+  `manifest.json` was modified, by intent; the build reproduced `main.js` byte-for-byte) and the
+  stray clone was moved out. **Chain `cd` with `&&`, never `;`.**
+
+## Open threads (do these next)
+
+1. **James: sign in at community.obsidian.md → connect GitHub → claim `thunderegg` (or New plugin
+   with `https://github.com/5tukgpt/thunderegg` if it is not offered) → read the review results →
+   turn on Action required notifications.** Paste whatever Errors it shows into the next session.
+2. If the scan still shows Errors, fix, run **Review branch**, then release 0.2.13.
+3. GTM D2 (Obsidian forum) stays blocked until the plugin is installable from inside Obsidian again.
+
+---
+
 # Thunderegg Obsidian plugin — ⛔ DELISTED from the Obsidian community directory since 2026-09-04 — nobody noticed for 17 days
 **Date:** 2026-09-21 · found while fetching the download count for James.
 
