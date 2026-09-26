@@ -466,7 +466,7 @@ export default class ThundereggPlugin extends Plugin {
       // for something that does not exist.
       if (isTrialExhaustedError(e)) {
         new Notice(
-          `Thunderegg's free trial is used up, so "${file.name}" wasn't converted. ` +
+          `Thunderegg's free recordings are used up, so "${file.name}" wasn't transcribed. ` +
           `Thunderegg is $19.95, one time — open Thunderegg → Settings to buy, then try again. ` +
           `Everything you already converted stays yours.`,
           12000,
@@ -544,9 +544,9 @@ export default class ThundereggPlugin extends Plugin {
       const done = ok > 0 ? `${ok} of ${targets.length} files converted first. ` : "";
       new Notice(
         refusal === "trial"
-          ? `Thunderegg's free trial is used up, so the rest of the folder wasn't converted. ` +
+          ? `Thunderegg's free recordings are used up, so the rest of the folder wasn't transcribed. ` +
             `${done}Thunderegg is $19.95, one time — open Thunderegg → Settings to buy, then ` +
-            `try again. Any "Your free trial is used up" notes left in the folder are ` +
+            `try again. Any "Your free recordings are used up" notes left in the folder are ` +
             `placeholders, not conversions.`
           : `Thunderegg isn't activated, so the rest of the folder wasn't converted. ` +
             `${done}Open Thunderegg → Settings and paste the licence key from your purchase ` +
@@ -1057,7 +1057,8 @@ class ThundereggSettingTab extends PluginSettingTab {
     refineryDesc.createEl("p", {
       text:
         "The Refinery is Thunderegg’s knowledge-management layer. This plugin is free and " +
-        "open source; the Thunderegg app it drives is $19.95 once, after a free trial. " +
+        "open source. Converting with the Thunderegg app is free and unlimited; its Pro tier " +
+        "(recording, transcription, the AI write-up and sync) is $19.95 once. " +
         "It introduces three concepts:",
     });
     const ul = refineryDesc.createEl("ul");
@@ -1252,8 +1253,9 @@ class ThundereggSettingTab extends PluginSettingTab {
     });
     cta.appendText(
       "Thunderegg converts 30+ file types to clean Markdown — including meeting recordings, " +
-      "transcribed on-device — 100% on your Mac. This plugin is free; the Mac app is " +
-      "$19.95 once, after a free trial. Get it at ",
+      "transcribed on-device — 100% on your Mac. This plugin is free, and converting with the " +
+      "Mac app is free and unlimited. Its Pro tier — recording, transcription, the AI write-up " +
+      "and sync — is $19.95 once. Get it at ",
     );
     cta.createEl("a", { href: "https://thunderegg.ai", text: "thunderegg.ai" });
     cta.appendText(".");

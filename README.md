@@ -3,7 +3,8 @@
 Convert any attachment in your vault — PDF, Word, Excel, PowerPoint, email, image, **even meeting recordings (transcribed on-device)** — to clean Markdown **with YAML frontmatter**, 100% on your Mac. Plus the **Refinery**: track note maturity, discover connections, and surface hub notes automatically.
 
 > **The plugin is free and MIT-licensed. The app it drives is not.** Thunderegg for macOS is
-> **$19.95, once** — no subscription, no account — after a free trial of 5 conversions. This
+> **converting is free and unlimited.** Thunderegg Pro — recording meetings, transcription, the
+> AI write-up and sync — is **$19.95, once**, no subscription and no account. This
 > plugin is the Obsidian half; the Thunderegg app does the converting, and it is what you buy.
 > [thunderegg.ai](https://thunderegg.ai)
 
@@ -11,8 +12,11 @@ Convert any attachment in your vault — PDF, Word, Excel, PowerPoint, email, im
 
 Stated plainly, in the order Obsidian's developer policies list them.
 
-- **Payment.** This plugin is free. It drives the Thunderegg app for macOS, which costs $19.95 once
-  after a free trial of 5 conversions. Without the app the plugin converts nothing.
+- **Payment.** This plugin is free, and so is everything it does: converting files with the
+  Thunderegg app is free and unlimited. The app's paid tier, Thunderegg Pro, is $19.95 once and
+  covers recording meetings, transcription, the AI write-up and sync, after three free recordings.
+  Without the app installed the plugin converts nothing, but the app itself costs nothing to
+  convert with.
 - **Account.** None. There is no Thunderegg account. A purchase gives you a licence key, entered
   in the app.
 - **Closed-source code.** This plugin is MIT-licensed and everything it runs inside Obsidian is in
@@ -88,7 +92,7 @@ metadata cache for instant display.
 
 ## Requirements
 - **macOS** (desktop-only — uses the on-device Thunderegg engine).
-- The **Thunderegg app** — **$19.95 once, 5 conversions free to try** — installed, which provides
+- The **Thunderegg app** — free to convert with, **$19.95 once** for Pro — installed, which provides
   `~/Library/Application Support/MarkItDownDroplet/convert.sh`. The engine path is
   configurable in plugin settings.
 - Image OCR uses the Apple Vision `ocr` helper that ships with the Thunderegg app. If image
