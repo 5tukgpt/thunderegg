@@ -3,8 +3,8 @@
 Convert any attachment in your vault — PDF, Word, Excel, PowerPoint, email, image, **even meeting recordings (transcribed on-device)** — to clean Markdown **with YAML frontmatter**, 100% on your Mac. Plus the **Refinery**: track note maturity, discover connections, and surface hub notes automatically.
 
 > **The plugin is free and MIT-licensed. The app it drives is not.** Thunderegg for macOS is
-> **converting is free and unlimited.** Thunderegg Pro — recording meetings, transcription, the
-> AI write-up and sync — is **$19.95, once**, no subscription and no account. This
+> **converting is free and unlimited.** Thunderegg Pro — recording meetings, transcription and the
+> AI write-up — is **$19.95, once**, no subscription and no account. This
 > plugin is the Obsidian half; the Thunderegg app does the converting, and it is what you buy.
 > [thunderegg.ai](https://thunderegg.ai)
 
@@ -14,7 +14,7 @@ Stated plainly, in the order Obsidian's developer policies list them.
 
 - **Payment.** This plugin is free, and so is everything it does: converting files with the
   Thunderegg app is free and unlimited. The app's paid tier, Thunderegg Pro, is $19.95 once and
-  covers recording meetings, transcription, the AI write-up and sync, after three free recordings.
+  covers recording meetings, transcription and the AI write-up, after three free recordings.
   Without the app installed the plugin converts nothing, but the app itself costs nothing to
   convert with.
 - **Account.** None. There is no Thunderegg account. A purchase gives you a licence key, entered

@@ -2019,7 +2019,7 @@ var ThundereggSettingTab = class extends import_obsidian3.PluginSettingTab {
       cls: "setting-item-description thunderegg-refinery-desc"
     });
     refineryDesc.createEl("p", {
-      text: "The Refinery is Thunderegg\u2019s knowledge-management layer. This plugin is free and open source. Converting with the Thunderegg app is free and unlimited; its Pro tier (recording, transcription, the AI write-up and sync) is $19.95 once. It introduces three concepts:"
+      text: "The Refinery is Thunderegg\u2019s knowledge-management layer. This plugin is free and open source. Converting with the Thunderegg app is free and unlimited; its Pro tier (recording, transcription and the AI write-up) is $19.95 once. It introduces three concepts:"
     });
     const ul = refineryDesc.createEl("ul");
     const liGrades = ul.createEl("li");
@@ -2140,7 +2140,7 @@ var ThundereggSettingTab = class extends import_obsidian3.PluginSettingTab {
       cls: "setting-item-description"
     });
     cta.appendText(
-      "Thunderegg converts 30+ file types to clean Markdown \u2014 including meeting recordings, transcribed on-device \u2014 100% on your Mac. This plugin is free, and converting with the Mac app is free and unlimited. Its Pro tier \u2014 recording, transcription, the AI write-up and sync \u2014 is $19.95 once. Get it at "
+      "Thunderegg converts 30+ file types to clean Markdown \u2014 including meeting recordings, transcribed on-device \u2014 100% on your Mac. This plugin is free, and converting with the Mac app is free and unlimited. Its Pro tier \u2014 recording, transcription and the AI write-up \u2014 is $19.95 once. Get it at "
     );
     cta.createEl("a", { href: "https://thunderegg.ai", text: "thunderegg.ai" });
     cta.appendText(".");

@@ -1058,7 +1058,7 @@ class ThundereggSettingTab extends PluginSettingTab {
       text:
         "The Refinery is Thunderegg’s knowledge-management layer. This plugin is free and " +
         "open source. Converting with the Thunderegg app is free and unlimited; its Pro tier " +
-        "(recording, transcription, the AI write-up and sync) is $19.95 once. " +
+        "(recording, transcription and the AI write-up) is $19.95 once. " +
         "It introduces three concepts:",
     });
     const ul = refineryDesc.createEl("ul");
@@ -1254,8 +1254,8 @@ class ThundereggSettingTab extends PluginSettingTab {
     cta.appendText(
       "Thunderegg converts 30+ file types to clean Markdown — including meeting recordings, " +
       "transcribed on-device — 100% on your Mac. This plugin is free, and converting with the " +
-      "Mac app is free and unlimited. Its Pro tier — recording, transcription, the AI write-up " +
-      "and sync — is $19.95 once. Get it at ",
+      "Mac app is free and unlimited. Its Pro tier — recording, transcription and the AI " +
+      "write-up — is $19.95 once. Get it at ",
     );
     cta.createEl("a", { href: "https://thunderegg.ai", text: "thunderegg.ai" });
     cta.appendText(".");
