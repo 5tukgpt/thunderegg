@@ -175,7 +175,9 @@ export function emptyBondGraph(): BondGraph {
 /**
  * Build the Bond graph from Obsidian's `metadataCache.resolvedLinks` shape.
  * Each resolved [[wikilink]] becomes a directed Bond.
- * If `root` is set, only files under that prefix are indexed.
+ * If `root` is set, only files inside that folder are indexed. `root` is a folder name as typed
+ * in Settings ("Notes", "Notes/", "/Notes/" all mean the same folder) — matched on a folder
+ * boundary, so "Notes" does NOT pull in "Notes Archive/…" or "Notes2/…".
  */
 export function buildBondGraph(
   resolved: Record<string, Record<string, number>>,
@@ -183,11 +185,13 @@ export function buildBondGraph(
 ): BondGraph {
   const out = new Map<string, Set<string>>();
   const inc = new Map<string, Set<string>>();
+  const folder = (root ?? "").trim().replace(/^\/+|\/+$/g, "");
+  const prefix = folder ? folder + "/" : "";
 
   for (const [src, targets] of Object.entries(resolved)) {
-    if (root && !src.startsWith(root)) continue;
+    if (prefix && !src.startsWith(prefix)) continue;
     for (const tgt of Object.keys(targets)) {
-      if (root && !tgt.startsWith(root)) continue;
+      if (prefix && !tgt.startsWith(prefix)) continue;
 
       if (!out.has(src)) out.set(src, new Set());
       out.get(src)!.add(tgt);

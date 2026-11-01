@@ -1,7 +1,7 @@
 /**
  * publish-net.ts — networking + device-token storage for Publish.
- * Imports obsidian (requestUrl) + node builtins (fs/os/path), so it is glue,
- * not unit-tested (like main.ts). Pure logic lives in publish-core.ts.
+ * Imports obsidian (requestUrl) + node builtins (fs/os/path). Tested in
+ * tests/publish-net.test.ts with requestUrl stubbed and homedir redirected.
  *
  * The device token is stored OUTSIDE the vault (app-support dir), never in
  * .obsidian/.../data.json — see auth-and-api-spec §2.

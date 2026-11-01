@@ -8,7 +8,8 @@
  * signature + public key travel in the exported map's sidecar.
  *
  * Uses Node crypto + fs (desktop-only plugin) — NOT obsidian. The pure
- * sign/verify/publicKey functions are unit-tested; the fs key-storage path is not.
+ * sign/verify/publicKey functions are unit-tested; key storage is tested with a
+ * redirected homedir (tests/publish-sign-keystore.test.ts).
  */
 import {
   generateKeyPairSync, createPublicKey, createPrivateKey, createHash,
@@ -65,7 +66,7 @@ export function contentHash(data: string): string {
   return createHash("sha256").update(data, "utf8").digest("hex");
 }
 
-/* ── Device key storage (fs; not unit-tested) ────────────────────────── */
+/* ── Device key storage (fs) ─────────────────────────────────────────── */
 
 /** Load the device signing key, generating + persisting it (chmod 600) on first use. */
 export function getOrCreateSigningKey(): KeyObject {

@@ -146,11 +146,13 @@ function emptyBondGraph() {
 function buildBondGraph(resolved, root) {
   const out = /* @__PURE__ */ new Map();
   const inc = /* @__PURE__ */ new Map();
+  const folder = (root ?? "").trim().replace(/^\/+|\/+$/g, "");
+  const prefix = folder ? folder + "/" : "";
   for (const [src, targets] of Object.entries(resolved)) {
-    if (root && !src.startsWith(root))
+    if (prefix && !src.startsWith(prefix))
       continue;
     for (const tgt of Object.keys(targets)) {
-      if (root && !tgt.startsWith(root))
+      if (prefix && !tgt.startsWith(prefix))
         continue;
       if (!out.has(src))
         out.set(src, /* @__PURE__ */ new Set());
@@ -722,29 +724,36 @@ function prepareForkImport(json) {
     return { artifact: null, blocking: ["File is not a distill map artifact (no map object)."] };
   return { artifact, blocking: [] };
 }
+function oneLine(v) {
+  return String(v ?? "").replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, " ");
+}
 function buildAttributionNote(a) {
+  const forkedFrom = oneLine(a.forkedFrom);
+  const author = oneLine(a.author);
+  const license = oneLine(a.license);
+  const sourceUrl = oneLine(a.sourceUrl);
   const lines = [
     "---",
-    `forked_from: ${a.forkedFrom}`,
-    `author: ${a.author}`,
-    `license: ${a.license}`,
-    `source_url: ${a.sourceUrl}`
+    `forked_from: ${forkedFrom}`,
+    `author: ${author}`,
+    `license: ${license}`,
+    `source_url: ${sourceUrl}`
   ];
   if (a.lineage) {
     lines.push(
-      `lineage_client_uuid: ${a.lineage.client_uuid}`,
-      `lineage_author_fingerprint: ${a.lineage.author_fingerprint}`,
-      `lineage_content_hash: ${a.lineage.content_hash}`
+      `lineage_client_uuid: ${oneLine(a.lineage.client_uuid)}`,
+      `lineage_author_fingerprint: ${oneLine(a.lineage.author_fingerprint)}`,
+      `lineage_content_hash: ${oneLine(a.lineage.content_hash)}`
     );
   }
   lines.push(
     "---",
     "",
-    `# ${a.displayTitle} (forked)`,
+    `# ${oneLine(a.displayTitle)} (forked)`,
     "",
-    `Forked from [@${a.author}](${a.sourceUrl}). License: ${a.license}.`,
+    `Forked from [@${author}](${sourceUrl}). License: ${license}.`,
     "",
-    `The map is in \`${a.canvasName}.canvas\` in this folder.`,
+    `The map is in \`${oneLine(a.canvasName)}.canvas\` in this folder.`,
     ""
   );
   return lines.join("\n");
@@ -1113,7 +1122,7 @@ var PublishModal = class extends import_obsidian2.Modal {
   }
 };
 function safeName(s) {
-  return (s || "map").replace(/[\\/:*?"<>|]/g, "-").slice(0, 80).trim() || "map";
+  return (s || "map").replace(/[\\/:*?"<>|\u0000-\u001f\u007f]/g, "-").slice(0, 80).trim().replace(/^\.+/, "").trim() || "map";
 }
 async function importMapPayload(app, payload, opts) {
   const check = checkForkMap(payload.map);
@@ -1126,7 +1135,7 @@ async function importMapPayload(app, payload, opts) {
     } catch {
     }
   }
-  const title = safeName(payload.title ?? opts.forkedFrom);
+  const title = safeName(payload.title || opts.forkedFrom);
   const canvasBody = JSON.stringify({ nodes: check.nodes, edges: check.edges }, null, 2);
   const canvasPath = (0, import_obsidian2.normalizePath)(`${folder}/${title}.canvas`);
   await writeOrReplace(app, canvasPath, canvasBody);
@@ -1134,7 +1143,7 @@ async function importMapPayload(app, payload, opts) {
     await writeOrReplace(app, (0, import_obsidian2.normalizePath)(`${folder}/${title}.distill.json`), opts.sourceJson);
   }
   const attribution = buildAttributionNote({
-    displayTitle: payload.title ?? title,
+    displayTitle: payload.title || title,
     canvasName: title,
     forkedFrom: opts.forkedFrom,
     author: opts.author,
@@ -1145,7 +1154,7 @@ async function importMapPayload(app, payload, opts) {
   await writeOrReplace(app, (0, import_obsidian2.normalizePath)(`${folder}/${title} \u2014 source.md`), attribution);
   for (const w of check.warnings)
     new import_obsidian2.Notice(`\u26A0\uFE0F ${w}`, 8e3);
-  new import_obsidian2.Notice(`\u2705 Forked "${payload.title ?? title}" into ${folder}/`);
+  new import_obsidian2.Notice(`\u2705 Forked "${payload.title || title}" into ${folder}/`);
   const f = app.vault.getAbstractFileByPath(canvasPath);
   if (f instanceof import_obsidian2.TFile)
     void app.workspace.getLeaf(true).openFile(f);

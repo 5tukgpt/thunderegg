@@ -1,7 +1,8 @@
 /**
  * publish-ui.ts — Obsidian-facing UI for Publish: the confirm modal (the
  * load-bearing "exact JSON leaving your device" control) and fork-to-vault import.
- * Imports obsidian, so it is glue (compile-checked, not unit-tested).
+ * Imports obsidian; the fork-import path is tested against a fake vault in
+ * tests/fork-import-integration.test.ts. The modals are compile-checked only.
  */
 import { App, Modal, Notice, Setting, TFile, normalizePath } from "obsidian";
 import {
@@ -258,8 +259,14 @@ interface ForkFile {
   map?: { nodes?: unknown[]; edges?: unknown[] };
 }
 
-function safeName(s: string): string {
-  return (s || "map").replace(/[\\/:*?"<>|]/g, "-").slice(0, 80).trim() || "map";
+/** A fork's title -> a file name. The title comes from someone else's map, so besides the
+ *  characters file systems reject, strip control characters (a newline in a file name) and
+ *  leading dots (".secret" would become a hidden file Obsidian never shows or opens). */
+export function safeName(s: string): string {
+  return (s || "map")
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\\/:*?"<>|\u0000-\u001f\u007f]/g, "-")
+    .slice(0, 80).trim().replace(/^\.+/, "").trim() || "map";
 }
 
 export interface ImportMapOptions {
@@ -293,7 +300,7 @@ export async function importMapPayload(
     try { await app.vault.createFolder(folder); } catch { /* race / exists */ }
   }
 
-  const title = safeName(payload.title ?? opts.forkedFrom);
+  const title = safeName(payload.title || opts.forkedFrom);
 
   // The map is already JSON Canvas — write the hardened nodes/edges only.
   const canvasBody = JSON.stringify({ nodes: check.nodes, edges: check.edges }, null, 2);
@@ -307,7 +314,7 @@ export async function importMapPayload(
 
   // Companion attribution note (provenance + lineage travel with the fork).
   const attribution = buildAttributionNote({
-    displayTitle: payload.title ?? title,
+    displayTitle: payload.title || title,
     canvasName: title,
     forkedFrom: opts.forkedFrom,
     author: opts.author,
@@ -318,7 +325,7 @@ export async function importMapPayload(
   await writeOrReplace(app, normalizePath(`${folder}/${title} — source.md`), attribution);
 
   for (const w of check.warnings) new Notice(`⚠️ ${w}`, 8000);
-  new Notice(`✅ Forked "${payload.title ?? title}" into ${folder}/`);
+  new Notice(`✅ Forked "${payload.title || title}" into ${folder}/`);
   const f = app.vault.getAbstractFileByPath(canvasPath);
   if (f instanceof TFile) void app.workspace.getLeaf(true).openFile(f);
 }

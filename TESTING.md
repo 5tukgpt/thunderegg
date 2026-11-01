@@ -1,4 +1,41 @@
-# Thunderegg — live-vault QA
+# Thunderegg — testing
+
+There are two kinds of testing here: **automated tests** (run in seconds, no Obsidian needed) and
+**live-vault QA** (a manual checklist inside a real Obsidian vault, further down).
+
+## Automated tests
+
+```bash
+npm ci          # one time — installs the exact versions in package-lock.json
+npm test        # runs every file in tests/ once (vitest)
+```
+
+Handy variants:
+
+```bash
+npx vitest                                   # watch mode: re-runs on save
+npx vitest run tests/publish-net.test.ts     # one file
+npx vitest run -t "vault root"               # tests whose name matches
+npx tsc --noEmit                             # typecheck only
+```
+
+**What is covered.** Pure logic (`core.ts`, `publish-core.ts`, the crypto in `publish-sign.ts`)
+is tested directly. The Obsidian-facing glue is tested through fakes:
+
+- `tests/helpers/obsidian-mock.ts` stands in for the `obsidian` module (the npm package is
+  types only) with an in-memory vault, a `Notice` recorder, and a `requestUrl` stub.
+- `publish-net` and the signing-key tests redirect `os.homedir()` to a temp folder, so they never
+  read or overwrite your real device token or signing key.
+
+**Never live.** No test makes a network request or uses a real credential — every server call
+goes through the `requestUrl` stub. A new test that needs the network must mock it the same way.
+
+**Not covered by automated tests:** `main.ts` (the plugin class: menus, status bar, settings tab,
+running the engine via `convert.sh`). Use the live-vault QA below for that.
+
+---
+
+# Live-vault QA
 
 ## Install (one time)
 Copy `manifest.json`, `main.js`, and `styles.css` into:
