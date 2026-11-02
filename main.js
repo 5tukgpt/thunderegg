@@ -1879,6 +1879,12 @@ var _ThundereggPlugin = class _ThundereggPlugin extends import_obsidian3.Plugin 
       this.settings.condenserThreshold
     );
   }
+  /** Redraw the status-bar section and the in-note bar for the active note. Settings changes
+      call this so a new threshold or display toggle shows at once, not on the next note switch. */
+  refreshRefinery() {
+    this.renderRefineryStatus();
+    this.decorateActiveLeaf();
+  }
   /* ── Status-bar Refinery section ────────────────────────────── */
   renderRefineryStatus() {
     this.statusRefinery.empty();
@@ -2083,6 +2089,7 @@ var ThundereggSettingTab = class extends import_obsidian3.PluginSettingTab {
         await this.plugin.saveSettings();
         if (this.plugin.settings.refineryEnabled) {
           this.plugin.buildBondGraph();
+          this.plugin.refreshRefinery();
         }
       })
     );
@@ -2092,24 +2099,28 @@ var ThundereggSettingTab = class extends import_obsidian3.PluginSettingTab {
       (s) => s.setLimits(2, 30, 1).setValue(this.plugin.settings.condenserThreshold).setDynamicTooltip().onChange(async (v) => {
         this.plugin.settings.condenserThreshold = v;
         await this.plugin.saveSettings();
+        this.plugin.refreshRefinery();
       })
     );
     new import_obsidian3.Setting(containerEl).setName("Show grade badges").setDesc("Display Blank / Rough / Polished / Crystal / Gem maturity indicators.").addToggle(
       (t) => t.setValue(this.plugin.settings.showGradeBadges).onChange(async (v) => {
         this.plugin.settings.showGradeBadges = v;
         await this.plugin.saveSettings();
+        this.plugin.refreshRefinery();
       })
     );
     new import_obsidian3.Setting(containerEl).setName("Show bond counts").setDesc("Display the number of wikilink connections for the active note.").addToggle(
       (t) => t.setValue(this.plugin.settings.showBondCounts).onChange(async (v) => {
         this.plugin.settings.showBondCounts = v;
         await this.plugin.saveSettings();
+        this.plugin.refreshRefinery();
       })
     );
     new import_obsidian3.Setting(containerEl).setName("Show condenser links").setDesc("When viewing a note, list which Condenser (hub) notes reference it.").addToggle(
       (t) => t.setValue(this.plugin.settings.showCondenserLinks).onChange(async (v) => {
         this.plugin.settings.showCondenserLinks = v;
         await this.plugin.saveSettings();
+        this.plugin.refreshRefinery();
       })
     );
     new import_obsidian3.Setting(containerEl).setName("Publish & Community").setHeading();

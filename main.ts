@@ -824,6 +824,13 @@ export default class ThundereggPlugin extends Plugin {
     );
   }
 
+  /** Redraw the status-bar section and the in-note bar for the active note. Settings changes
+      call this so a new threshold or display toggle shows at once, not on the next note switch. */
+  refreshRefinery(): void {
+    this.renderRefineryStatus();
+    this.decorateActiveLeaf();
+  }
+
   /* ── Status-bar Refinery section ────────────────────────────── */
 
   private renderRefineryStatus(): void {
@@ -1110,6 +1117,7 @@ class ThundereggSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
             if (this.plugin.settings.refineryEnabled) {
               this.plugin.buildBondGraph();
+              this.plugin.refreshRefinery();
             }
           }),
       );
@@ -1127,6 +1135,7 @@ class ThundereggSettingTab extends PluginSettingTab {
           .onChange(async (v) => {
             this.plugin.settings.condenserThreshold = v;
             await this.plugin.saveSettings();
+            this.plugin.refreshRefinery();
           }),
       );
 
@@ -1137,6 +1146,7 @@ class ThundereggSettingTab extends PluginSettingTab {
         t.setValue(this.plugin.settings.showGradeBadges).onChange(async (v) => {
           this.plugin.settings.showGradeBadges = v;
           await this.plugin.saveSettings();
+          this.plugin.refreshRefinery();
         }),
       );
 
@@ -1147,6 +1157,7 @@ class ThundereggSettingTab extends PluginSettingTab {
         t.setValue(this.plugin.settings.showBondCounts).onChange(async (v) => {
           this.plugin.settings.showBondCounts = v;
           await this.plugin.saveSettings();
+          this.plugin.refreshRefinery();
         }),
       );
 
@@ -1157,6 +1168,7 @@ class ThundereggSettingTab extends PluginSettingTab {
         t.setValue(this.plugin.settings.showCondenserLinks).onChange(async (v) => {
           this.plugin.settings.showCondenserLinks = v;
           await this.plugin.saveSettings();
+          this.plugin.refreshRefinery();
         }),
       );
 
