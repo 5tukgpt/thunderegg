@@ -174,6 +174,37 @@ describe("settings", () => {
     expect(statusText(b)[1]).toBe("💠 Crystal🔗 0");   // no bonds inside Elsewhere/
   });
 
+  it("a new condenser threshold shows at once, without switching notes (regression)", async () => {
+    b = await bootRefinery();
+    display(b);
+    b.workspace.activate("Notes/hub.md");
+    expect(statusText(b)[1]).toContain("⚗️ Condenser");          // 6 bonds >= default 5
+    await row("Condenser threshold").components[0].fire(10);
+    expect(statusText(b)[1]).not.toContain("Condenser");
+    expect(bar()!.textContent).not.toContain("Condenser");
+  });
+
+  it("display toggles apply at once to the status bar and the in-note bar (regression)", async () => {
+    b = await bootRefinery();
+    display(b);
+    b.workspace.activate("Notes/a.md");
+    await row("Show grade badges").components[0].fire(false);
+    expect(statusText(b)[1]).not.toContain("Crystal");
+    await row("Show bond counts").components[0].fire(false);
+    expect(statusText(b)[1]).toBe("");
+    expect(bar()!.querySelector("a.internal-link")).not.toBeNull();
+    await row("Show condenser links").components[0].fire(false);
+    expect(document.querySelector(".thunderegg-refinery-bar a.internal-link")).toBeNull();
+  });
+
+  it("a new vault root shows at once, without switching notes (regression)", async () => {
+    b = await bootRefinery();
+    display(b);
+    b.workspace.activate("Notes/a.md");
+    await row("Vault root for bond discovery").components[0].fire("Elsewhere");
+    expect(statusText(b)[1]).toBe("💠 Crystal🔗 0");
+  });
+
   it("re-checks the engine when its path changes", async () => {
     b = await bootPlugin(ThundereggPlugin);
     display(b);
