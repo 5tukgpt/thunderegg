@@ -104,6 +104,13 @@ function isNoOcrError(e) {
   const stderr = e?.stderr;
   return typeof stderr === "string" && stderr.includes(NO_OCR_TOKEN);
 }
+function insideVaultRelative(rel, isAbsolute2, sep2 = "/") {
+  if (!rel || isAbsolute2)
+    return null;
+  if (rel === ".." || rel.startsWith(".." + sep2))
+    return null;
+  return rel;
+}
 var TRIAL_TOKEN = "DISTILL_TRIAL_EXHAUSTED";
 var UNLICENSED_TOKEN = "DISTILL_UNLICENSED";
 function stderrOf(e) {
@@ -143,14 +150,20 @@ function normalizeGrade(raw) {
 function emptyBondGraph() {
   return { outgoing: /* @__PURE__ */ new Map(), incoming: /* @__PURE__ */ new Map() };
 }
+function isUnderRoot(p, root) {
+  const r = root.replace(/^\/+|\/+$/g, "");
+  if (!r)
+    return true;
+  return p.startsWith(r + "/");
+}
 function buildBondGraph(resolved, root) {
   const out = /* @__PURE__ */ new Map();
   const inc = /* @__PURE__ */ new Map();
   for (const [src, targets] of Object.entries(resolved)) {
-    if (root && !src.startsWith(root))
+    if (!isUnderRoot(src, root))
       continue;
     for (const tgt of Object.keys(targets)) {
-      if (root && !tgt.startsWith(root))
+      if (!isUnderRoot(tgt, root))
         continue;
       if (!out.has(src))
         out.set(src, /* @__PURE__ */ new Set());
@@ -1502,8 +1515,9 @@ var _ThundereggPlugin = class _ThundereggPlugin extends import_obsidian3.Plugin 
       const abs = line.trim();
       if (!abs)
         continue;
-      const rel = path3.relative(base, abs);
-      if (!rel || rel.startsWith("..") || path3.isAbsolute(rel))
+      const relRaw = path3.relative(base, abs);
+      const rel = insideVaultRelative(relRaw, path3.isAbsolute(relRaw), path3.sep);
+      if (rel === null)
         continue;
       out.push((0, import_obsidian3.normalizePath)(rel));
     }

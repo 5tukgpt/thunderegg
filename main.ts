@@ -9,7 +9,7 @@ import * as os from "os";
 import * as path from "path";
 import * as fs from "fs";
 import {
-  CONVERTIBLE, GRADE_META, shellQuote, normalizeGrade, isNoOcrError, isAudioVideo,
+  CONVERTIBLE, GRADE_META, shellQuote, insideVaultRelative, normalizeGrade, isNoOcrError, isAudioVideo,
   isTrialExhaustedError, isUnlicensedError, stemPath,
   BondGraph, emptyBondGraph, buildBondGraph,
   bondCount, isCondenser, referencingCondensers,
@@ -390,8 +390,9 @@ export default class ThundereggPlugin extends Plugin {
     for (const line of raw.split("\n")) {
       const abs = line.trim();
       if (!abs) continue;
-      const rel = path.relative(base, abs);
-      if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) continue;
+      const relRaw = path.relative(base, abs);
+      const rel = insideVaultRelative(relRaw, path.isAbsolute(relRaw), path.sep);
+      if (rel === null) continue;
       out.push(normalizePath(rel));
     }
     return out;

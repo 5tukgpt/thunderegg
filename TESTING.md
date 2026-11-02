@@ -1,4 +1,34 @@
-# Thunderegg — live-vault QA
+# Testing Thunderegg
+
+## Automated tests (run these first)
+
+```bash
+npm ci          # install exact dependency versions from package-lock.json
+npm test        # runs the whole vitest suite (~2 s)
+npx tsc --noEmit  # type-check everything, tests included
+```
+
+- Run one file: `npx vitest run tests/vault-root.test.ts`
+- Watch mode while editing: `npx vitest`
+- Coverage (optional, not a saved dependency):
+  `npm i --no-save @vitest/coverage-v8@4.1.8 && npx vitest run --coverage --coverage.include='*.ts'`
+- Works on macOS and Linux (npm installs the right native esbuild/rolldown binaries per OS).
+
+**What is covered:** the pure logic in `core.ts` and `publish-core.ts` (conversion rules, grades,
+bond graph, canvas→artifact transform, redaction/privacy gate, fork hardening, lineage), the
+signing code in `publish-sign.ts` (including the on-disk key), the network + token code in
+`publish-net.ts`, and the fork-import flow in `publish-ui.ts` against an in-memory vault.
+
+**No test touches the network or your real files.** `tests/helpers/obsidian-mock.ts` replaces the
+`obsidian` module (its `requestUrl` is a mock each test programs), and tests that read/write the
+token or signing key point `HOME` at a throwaway temp folder first.
+
+**Not covered automatically:** `main.ts` (Obsidian plugin wiring, engine subprocess, clipboard)
+and the modal UI. Those are covered by the manual live-vault QA below.
+
+---
+
+# Live-vault QA (manual)
 
 ## Install (one time)
 Copy `manifest.json`, `main.js`, and `styles.css` into:

@@ -41,7 +41,6 @@ export function isConvertible(ext: string): boolean {
   return CONVERTIBLE.has(ext.toLowerCase());
 }
 
-/** True for a recording (audio/video) — conversion means transcription and takes minutes, not seconds. */
 /** Drop the extension from the LAST path segment: "docs/report.pdf" -> "docs/report".
  *
  *  Used ONLY as the degraded fallback when the engine did not report the note path it chose
@@ -60,6 +59,7 @@ export function stemPath(p: string): string {
   return dir + name.slice(0, dot);
 }
 
+/** True for a recording (audio/video) — conversion means transcription and takes minutes, not seconds. */
 export function isAudioVideo(ext: string): boolean {
   return AV_EXTENSIONS.has(ext.toLowerCase());
 }
@@ -85,6 +85,18 @@ export const NO_OCR_TOKEN = "DISTILL_NO_OCR";
 export function isNoOcrError(e: unknown): boolean {
   const stderr = (e as { stderr?: unknown } | null | undefined)?.stderr;
   return typeof stderr === "string" && stderr.includes(NO_OCR_TOKEN);
+}
+
+/**
+ * Vault-relative form of an absolute path the engine reported, or null when it is outside the
+ * vault (or IS the vault folder). `rel` is computed by the caller's `path.relative(base, abs)`.
+ * Only a real parent hop ("..", "../x") means outside — a vault file whose name merely starts
+ * with two dots ("..notes.md") is inside and must not be dropped.
+ */
+export function insideVaultRelative(rel: string, isAbsolute: boolean, sep = "/"): string | null {
+  if (!rel || isAbsolute) return null;
+  if (rel === ".." || rel.startsWith(".." + sep)) return null;
+  return rel;
 }
 
 /* ── Licence / trial refusals ──────────────────────────────────────
@@ -173,9 +185,21 @@ export function emptyBondGraph(): BondGraph {
 }
 
 /**
+ * True when vault path `p` lies inside folder `root`. `root` is what the user typed in
+ * settings ("Notes", "Notes/", "/Notes/" all mean the same folder). Matching is by whole
+ * path segment: a root of "Notes" must NOT capture "Notes Archive/x.md" or "Notes.md".
+ * An empty root (or one that is only slashes) means the whole vault.
+ */
+export function isUnderRoot(p: string, root: string): boolean {
+  const r = root.replace(/^\/+|\/+$/g, "");
+  if (!r) return true;
+  return p.startsWith(r + "/");
+}
+
+/**
  * Build the Bond graph from Obsidian's `metadataCache.resolvedLinks` shape.
  * Each resolved [[wikilink]] becomes a directed Bond.
- * If `root` is set, only files under that prefix are indexed.
+ * If `root` is set, only files inside that folder are indexed (see isUnderRoot).
  */
 export function buildBondGraph(
   resolved: Record<string, Record<string, number>>,
@@ -185,9 +209,9 @@ export function buildBondGraph(
   const inc = new Map<string, Set<string>>();
 
   for (const [src, targets] of Object.entries(resolved)) {
-    if (root && !src.startsWith(root)) continue;
+    if (!isUnderRoot(src, root)) continue;
     for (const tgt of Object.keys(targets)) {
-      if (root && !tgt.startsWith(root)) continue;
+      if (!isUnderRoot(tgt, root)) continue;
 
       if (!out.has(src)) out.set(src, new Set());
       out.get(src)!.add(tgt);
