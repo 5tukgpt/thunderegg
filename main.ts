@@ -10,7 +10,7 @@ import * as path from "path";
 import * as fs from "fs";
 import {
   CONVERTIBLE, GRADE_META, shellQuote, insideVaultRelative, normalizeGrade, isNoOcrError, isAudioVideo,
-  isTrialExhaustedError, isUnlicensedError, stemPath,
+  isTrialExhaustedError, isUnlicensedError, stemPath, siblingPath, firstFreeName,
   BondGraph, emptyBondGraph, buildBondGraph,
   bondCount, isCondenser, referencingCondensers,
   SingleFlight,
@@ -138,7 +138,22 @@ export default class ThundereggPlugin extends Plugin {
     /* ── File-explorer context menu ── */
     this.registerEvent(
       this.app.workspace.on("file-menu", (menu, file) => {
-        if (file instanceof TFile && CONVERTIBLE.has(file.extension.toLowerCase())) {
+        // A map file's extension is "json", which is convertible — so it must be matched
+        // BEFORE the generic branch, or Verify/Fork never appear in the menu.
+        if (file instanceof TFile && file.name.toLowerCase().endsWith(".distill.json")) {
+          menu.addItem((item) =>
+            item
+              .setTitle("Verify signature (Thunderegg)")
+              .setIcon("shield-check")
+              .onClick(() => this.verifyMapFile(file)),
+          );
+          menu.addItem((item) =>
+            item
+              .setTitle("Fork map file into vault (Thunderegg)")
+              .setIcon("git-fork")
+              .onClick(() => this.forkMapFile(file)),
+          );
+        } else if (file instanceof TFile && CONVERTIBLE.has(file.extension.toLowerCase())) {
           menu.addItem((item) =>
             item
               .setTitle("Convert to Markdown (Thunderegg)")
@@ -151,19 +166,6 @@ export default class ThundereggPlugin extends Plugin {
               .setTitle("Publish concept map (Thunderegg)")
               .setIcon("upload")
               .onClick(() => this.openPublishModal(file)),
-          );
-        } else if (file instanceof TFile && file.name.toLowerCase().endsWith(".distill.json")) {
-          menu.addItem((item) =>
-            item
-              .setTitle("Verify signature (Thunderegg)")
-              .setIcon("shield-check")
-              .onClick(() => this.verifyMapFile(file)),
-          );
-          menu.addItem((item) =>
-            item
-              .setTitle("Fork map file into vault (Thunderegg)")
-              .setIcon("git-fork")
-              .onClick(() => this.forkMapFile(file)),
           );
         } else if (file instanceof TFolder) {
           menu.addItem((item) =>
@@ -635,7 +637,10 @@ export default class ThundereggPlugin extends Plugin {
           .slice(0, 16)
           .replace("T", " ")
           .replace(":", "-");
-        const niceName = `Clipboard ${dateStr}.md`;
+        // Named to the minute, so a second clipboard in the same minute would collide and
+        // renameFile would throw — after the source was trashed, stranding the raw note.
+        const niceName = firstFreeName(`Clipboard ${dateStr}`, ".md",
+          (n) => this.app.vault.getAbstractFileByPath(normalizePath(n)) !== null);
         const nicePath = normalizePath(niceName);
         await this.app.fileManager.renameFile(mdFile, nicePath);
 
@@ -685,7 +690,7 @@ export default class ThundereggPlugin extends Plugin {
     };
     // Forked canvases carry their lineage receipt into the export (x-distill.forked_from).
     let lineage: ForkLineage | undefined;
-    const notePath = normalizePath(file.path.replace(/[^/]+$/, `${file.basename} — source.md`));
+    const notePath = normalizePath(siblingPath(file.path, `${file.basename} — source.md`));
     const note = this.app.vault.getAbstractFileByPath(notePath);
     if (note instanceof TFile) {
       lineage = parseLineageFrontmatter(await this.app.vault.read(note)) ?? undefined;
@@ -698,7 +703,7 @@ export default class ThundereggPlugin extends Plugin {
     try {
       const json = await this.app.vault.read(file);
       const base = file.name.replace(/\.distill\.json$/i, "");
-      const sidecarPath = normalizePath(file.path.replace(/[^/]+$/, `${base} — provenance.md`));
+      const sidecarPath = normalizePath(siblingPath(file.path, `${base} — provenance.md`));
       const sidecar = this.app.vault.getAbstractFileByPath(sidecarPath);
       if (!(sidecar instanceof TFile)) {
         new Notice("Thunderegg: no provenance sidecar found next to this map — can't verify.");
@@ -728,7 +733,7 @@ export default class ThundereggPlugin extends Plugin {
 
       // Same verify path as verifyMapFile: sidecar → parseSidecarSignature → verifyBytes.
       const base = file.name.replace(/\.distill\.json$/i, "");
-      const sidecarPath = normalizePath(file.path.replace(/[^/]+$/, `${base} — provenance.md`));
+      const sidecarPath = normalizePath(siblingPath(file.path, `${base} — provenance.md`));
       const sidecar = this.app.vault.getAbstractFileByPath(sidecarPath);
       let fingerprint: string | null = null;
       let problem: string | null = null;
@@ -1127,7 +1132,7 @@ class ThundereggSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Show grade badges")
-      .setDesc("Display Vapor / Distillate / Essence maturity indicators.")
+      .setDesc("Display Blank / Rough / Polished / Crystal / Gem maturity indicators.")
       .addToggle((t) =>
         t.setValue(this.plugin.settings.showGradeBadges).onChange(async (v) => {
           this.plugin.settings.showGradeBadges = v;

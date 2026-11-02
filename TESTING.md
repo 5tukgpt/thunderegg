@@ -17,14 +17,25 @@ npx tsc --noEmit  # type-check everything, tests included
 **What is covered:** the pure logic in `core.ts` and `publish-core.ts` (conversion rules, grades,
 bond graph, canvas→artifact transform, redaction/privacy gate, fork hardening, lineage), the
 signing code in `publish-sign.ts` (including the on-disk key), the network + token code in
-`publish-net.ts`, and the fork-import flow in `publish-ui.ts` against an in-memory vault.
+`publish-net.ts`, the fork-import flow in `publish-ui.ts`, and the plugin itself (`main.ts`):
+status bar, menus, commands, file/folder/clipboard conversion, signature verify, fork,
+publish hand-off, the Refinery display and the settings tab (`tests/main-*.test.ts`).
 
-**No test touches the network or your real files.** `tests/helpers/obsidian-mock.ts` replaces the
-`obsidian` module (its `requestUrl` is a mock each test programs), and tests that read/write the
-token or signing key point `HOME` at a throwaway temp folder first.
+**How `main.ts` is tested without Obsidian** (`tests/helpers/`):
+- `obsidian-mock.ts` — a fake `obsidian` module (Plugin, Notice, TFile, Setting, Modal…). It is
+  wired in for every test by `vitest.config.mts`, because the real npm package is types only.
+- `plugin-harness.ts` — `bootPlugin()` creates a real temp vault folder, a fake `convert.sh`
+  engine, and fake workspace / metadata cache, then runs the plugin's real `onload()`. The fake
+  engine reacts to words in the file name (`TRIAL`, `UNLIC`, `NOOCR`, `CRASH`, `SILENT`) so a
+  test can make it refuse or fail. These tests run in a simulated browser DOM (happy-dom).
+- `vitest.config.mts` also makes `import "../main"` load `main.ts`, not the built `main.js`.
 
-**Not covered automatically:** `main.ts` (Obsidian plugin wiring, engine subprocess, clipboard)
-and the modal UI. Those are covered by the manual live-vault QA below.
+**No test touches the network or your real files.** The fake `requestUrl` is a mock each test
+programs; tests that read/write the token or signing key point `HOME` at a throwaway temp folder
+first; plugin tests use their own temp vault and fake engine.
+
+**Not covered automatically:** the Publish modal's form UI, the real engine, and how things
+actually look in Obsidian. Those are covered by the manual live-vault QA below.
 
 ---
 

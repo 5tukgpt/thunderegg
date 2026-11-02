@@ -111,6 +111,19 @@ function insideVaultRelative(rel, isAbsolute2, sep2 = "/") {
     return null;
   return rel;
 }
+function siblingPath(p, name) {
+  const slash = p.lastIndexOf("/");
+  return (slash >= 0 ? p.slice(0, slash + 1) : "") + name;
+}
+function firstFreeName(stem, ext, taken) {
+  if (!taken(`${stem}${ext}`))
+    return `${stem}${ext}`;
+  for (let i = 2; ; i++) {
+    const n = `${stem} ${i}${ext}`;
+    if (!taken(n))
+      return n;
+  }
+}
 var TRIAL_TOKEN = "DISTILL_TRIAL_EXHAUSTED";
 var UNLICENSED_TOKEN = "DISTILL_UNLICENSED";
 function stderrOf(e) {
@@ -1290,20 +1303,20 @@ var _ThundereggPlugin = class _ThundereggPlugin extends import_obsidian3.Plugin 
     });
     this.registerEvent(
       this.app.workspace.on("file-menu", (menu, file) => {
-        if (file instanceof import_obsidian3.TFile && CONVERTIBLE.has(file.extension.toLowerCase())) {
+        if (file instanceof import_obsidian3.TFile && file.name.toLowerCase().endsWith(".distill.json")) {
+          menu.addItem(
+            (item) => item.setTitle("Verify signature (Thunderegg)").setIcon("shield-check").onClick(() => this.verifyMapFile(file))
+          );
+          menu.addItem(
+            (item) => item.setTitle("Fork map file into vault (Thunderegg)").setIcon("git-fork").onClick(() => this.forkMapFile(file))
+          );
+        } else if (file instanceof import_obsidian3.TFile && CONVERTIBLE.has(file.extension.toLowerCase())) {
           menu.addItem(
             (item) => item.setTitle("Convert to Markdown (Thunderegg)").setIcon("file-down").onClick(() => this.convertFile(file))
           );
         } else if (file instanceof import_obsidian3.TFile && file.extension.toLowerCase() === "canvas") {
           menu.addItem(
             (item) => item.setTitle("Publish concept map (Thunderegg)").setIcon("upload").onClick(() => this.openPublishModal(file))
-          );
-        } else if (file instanceof import_obsidian3.TFile && file.name.toLowerCase().endsWith(".distill.json")) {
-          menu.addItem(
-            (item) => item.setTitle("Verify signature (Thunderegg)").setIcon("shield-check").onClick(() => this.verifyMapFile(file))
-          );
-          menu.addItem(
-            (item) => item.setTitle("Fork map file into vault (Thunderegg)").setIcon("git-fork").onClick(() => this.forkMapFile(file))
           );
         } else if (file instanceof import_obsidian3.TFolder) {
           menu.addItem(
@@ -1699,7 +1712,11 @@ var _ThundereggPlugin = class _ThundereggPlugin extends import_obsidian3.Plugin 
       const mdFile = this.app.vault.getAbstractFileByPath(mdRawPath);
       if (mdFile instanceof import_obsidian3.TFile) {
         const dateStr = (/* @__PURE__ */ new Date()).toISOString().slice(0, 16).replace("T", " ").replace(":", "-");
-        const niceName = `Clipboard ${dateStr}.md`;
+        const niceName = firstFreeName(
+          `Clipboard ${dateStr}`,
+          ".md",
+          (n) => this.app.vault.getAbstractFileByPath((0, import_obsidian3.normalizePath)(n)) !== null
+        );
         const nicePath = (0, import_obsidian3.normalizePath)(niceName);
         await this.app.fileManager.renameFile(mdFile, nicePath);
         new import_obsidian3.Notice(`\u2705 Thunderegg: created ${niceName}`);
@@ -1745,7 +1762,7 @@ var _ThundereggPlugin = class _ThundereggPlugin extends import_obsidian3.Plugin 
       defaultLicense: this.settings.defaultLicense
     };
     let lineage;
-    const notePath = (0, import_obsidian3.normalizePath)(file.path.replace(/[^/]+$/, `${file.basename} \u2014 source.md`));
+    const notePath = (0, import_obsidian3.normalizePath)(siblingPath(file.path, `${file.basename} \u2014 source.md`));
     const note = this.app.vault.getAbstractFileByPath(notePath);
     if (note instanceof import_obsidian3.TFile) {
       lineage = parseLineageFrontmatter(await this.app.vault.read(note)) ?? void 0;
@@ -1757,7 +1774,7 @@ var _ThundereggPlugin = class _ThundereggPlugin extends import_obsidian3.Plugin 
     try {
       const json = await this.app.vault.read(file);
       const base = file.name.replace(/\.distill\.json$/i, "");
-      const sidecarPath = (0, import_obsidian3.normalizePath)(file.path.replace(/[^/]+$/, `${base} \u2014 provenance.md`));
+      const sidecarPath = (0, import_obsidian3.normalizePath)(siblingPath(file.path, `${base} \u2014 provenance.md`));
       const sidecar = this.app.vault.getAbstractFileByPath(sidecarPath);
       if (!(sidecar instanceof import_obsidian3.TFile)) {
         new import_obsidian3.Notice("Thunderegg: no provenance sidecar found next to this map \u2014 can't verify.");
@@ -1782,7 +1799,7 @@ var _ThundereggPlugin = class _ThundereggPlugin extends import_obsidian3.Plugin 
     try {
       const json = await this.app.vault.read(file);
       const base = file.name.replace(/\.distill\.json$/i, "");
-      const sidecarPath = (0, import_obsidian3.normalizePath)(file.path.replace(/[^/]+$/, `${base} \u2014 provenance.md`));
+      const sidecarPath = (0, import_obsidian3.normalizePath)(siblingPath(file.path, `${base} \u2014 provenance.md`));
       const sidecar = this.app.vault.getAbstractFileByPath(sidecarPath);
       let fingerprint = null;
       let problem = null;
@@ -2077,7 +2094,7 @@ var ThundereggSettingTab = class extends import_obsidian3.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("Show grade badges").setDesc("Display Vapor / Distillate / Essence maturity indicators.").addToggle(
+    new import_obsidian3.Setting(containerEl).setName("Show grade badges").setDesc("Display Blank / Rough / Polished / Crystal / Gem maturity indicators.").addToggle(
       (t) => t.setValue(this.plugin.settings.showGradeBadges).onChange(async (v) => {
         this.plugin.settings.showGradeBadges = v;
         await this.plugin.saveSettings();

@@ -99,6 +99,28 @@ export function insideVaultRelative(rel: string, isAbsolute: boolean, sep = "/")
   return rel;
 }
 
+/**
+ * Path of a file named `name` in the same folder as `p`: siblingPath("a/b.canvas", "x.md") ->
+ * "a/x.md". Built by slicing, not String.replace, because a replacement STRING interprets `$&`,
+ * `$'` and `` $` `` — a map called "Q$&A.distill.json" would otherwise look for the wrong sidecar.
+ */
+export function siblingPath(p: string, name: string): string {
+  const slash = p.lastIndexOf("/");
+  return (slash >= 0 ? p.slice(0, slash + 1) : "") + name;
+}
+
+/**
+ * First of `${stem}${ext}`, `${stem} 2${ext}`, `${stem} 3${ext}`… for which `taken` is false.
+ * Clipboard notes are named to the minute, so two conversions in one minute collide.
+ */
+export function firstFreeName(stem: string, ext: string, taken: (name: string) => boolean): string {
+  if (!taken(`${stem}${ext}`)) return `${stem}${ext}`;
+  for (let i = 2; ; i++) {
+    const n = `${stem} ${i}${ext}`;
+    if (!taken(n)) return n;
+  }
+}
+
 /* ── Licence / trial refusals ──────────────────────────────────────
  * Thunderegg is $19.95 once, after a free trial of 5 conversions. When the engine refuses it
  * says WHY on stderr, and the two reasons are different people:
