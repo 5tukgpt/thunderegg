@@ -1,4 +1,45 @@
-# Thunderegg — live-vault QA
+# Testing Thunderegg
+
+## Automated tests (run these first)
+
+```bash
+npm ci          # install exact dependency versions from package-lock.json
+npm test        # runs the whole vitest suite (~2 s)
+npx tsc --noEmit  # type-check everything, tests included
+```
+
+- Run one file: `npx vitest run tests/vault-root.test.ts`
+- Watch mode while editing: `npx vitest`
+- Coverage (optional, not a saved dependency):
+  `npm i --no-save @vitest/coverage-v8@4.1.8 && npx vitest run --coverage --coverage.include='*.ts'`
+- Works on macOS and Linux (npm installs the right native esbuild/rolldown binaries per OS).
+
+**What is covered:** the pure logic in `core.ts` and `publish-core.ts` (conversion rules, grades,
+bond graph, canvas→artifact transform, redaction/privacy gate, fork hardening, lineage), the
+signing code in `publish-sign.ts` (including the on-disk key), the network + token code in
+`publish-net.ts`, the fork-import flow in `publish-ui.ts`, and the plugin itself (`main.ts`):
+status bar, menus, commands, file/folder/clipboard conversion, signature verify, fork,
+publish hand-off, the Refinery display and the settings tab (`tests/main-*.test.ts`).
+
+**How `main.ts` is tested without Obsidian** (`tests/helpers/`):
+- `obsidian-mock.ts` — a fake `obsidian` module (Plugin, Notice, TFile, Setting, Modal…). It is
+  wired in for every test by `vitest.config.mts`, because the real npm package is types only.
+- `plugin-harness.ts` — `bootPlugin()` creates a real temp vault folder, a fake `convert.sh`
+  engine, and fake workspace / metadata cache, then runs the plugin's real `onload()`. The fake
+  engine reacts to words in the file name (`TRIAL`, `UNLIC`, `NOOCR`, `CRASH`, `SILENT`) so a
+  test can make it refuse or fail. These tests run in a simulated browser DOM (happy-dom).
+- `vitest.config.mts` also makes `import "../main"` load `main.ts`, not the built `main.js`.
+
+**No test touches the network or your real files.** The fake `requestUrl` is a mock each test
+programs; tests that read/write the token or signing key point `HOME` at a throwaway temp folder
+first; plugin tests use their own temp vault and fake engine.
+
+**Not covered automatically:** the Publish modal's form UI, the real engine, and how things
+actually look in Obsidian. Those are covered by the manual live-vault QA below.
+
+---
+
+# Live-vault QA (manual)
 
 ## Install (one time)
 Copy `manifest.json`, `main.js`, and `styles.css` into:
