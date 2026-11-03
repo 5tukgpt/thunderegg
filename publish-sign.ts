@@ -9,7 +9,7 @@
  *
  * Uses Node crypto + fs (desktop-only plugin) — NOT obsidian. The pure
  * sign/verify/publicKey functions are unit-tested; key storage is tested with a
- * redirected homedir (tests/publish-sign-keystore.test.ts).
+ * redirected homedir (tests/publish-sign-storage.test.ts).
  */
 import {
   generateKeyPairSync, createPublicKey, createPrivateKey, createHash,

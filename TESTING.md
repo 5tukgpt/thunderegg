@@ -1,41 +1,45 @@
-# Thunderegg — testing
+# Testing Thunderegg
 
-There are two kinds of testing here: **automated tests** (run in seconds, no Obsidian needed) and
-**live-vault QA** (a manual checklist inside a real Obsidian vault, further down).
-
-## Automated tests
+## Automated tests (run these first)
 
 ```bash
-npm ci          # one time — installs the exact versions in package-lock.json
-npm test        # runs every file in tests/ once (vitest)
+npm ci          # install exact dependency versions from package-lock.json
+npm test        # runs the whole vitest suite (~2 s)
+npx tsc --noEmit  # type-check everything, tests included
 ```
 
-Handy variants:
+- Run one file: `npx vitest run tests/vault-root.test.ts`
+- Watch mode while editing: `npx vitest`
+- Coverage (optional, not a saved dependency):
+  `npm i --no-save @vitest/coverage-v8@4.1.8 && npx vitest run --coverage --coverage.include='*.ts'`
+- Works on macOS and Linux (npm installs the right native esbuild/rolldown binaries per OS).
 
-```bash
-npx vitest                                   # watch mode: re-runs on save
-npx vitest run tests/publish-net.test.ts     # one file
-npx vitest run -t "vault root"               # tests whose name matches
-npx tsc --noEmit                             # typecheck only
-```
+**What is covered:** the pure logic in `core.ts` and `publish-core.ts` (conversion rules, grades,
+bond graph, canvas→artifact transform, redaction/privacy gate, fork hardening, lineage), the
+signing code in `publish-sign.ts` (including the on-disk key), the network + token code in
+`publish-net.ts`, the fork-import flow in `publish-ui.ts`, and the plugin itself (`main.ts`):
+status bar, menus, commands, file/folder/clipboard conversion, signature verify, fork,
+publish hand-off, the Refinery display and the settings tab (`tests/main-*.test.ts`).
 
-**What is covered.** Pure logic (`core.ts`, `publish-core.ts`, the crypto in `publish-sign.ts`)
-is tested directly. The Obsidian-facing glue is tested through fakes:
+**How `main.ts` is tested without Obsidian** (`tests/helpers/`):
+- `obsidian-mock.ts` — a fake `obsidian` module (Plugin, Notice, TFile, Setting, Modal…). It is
+  wired in for every test by `vitest.config.mts`, because the real npm package is types only.
+- `plugin-harness.ts` — `bootPlugin()` creates a real temp vault folder, a fake `convert.sh`
+  engine, and fake workspace / metadata cache, then runs the plugin's real `onload()`. The fake
+  engine reacts to words in the file name (`TRIAL`, `UNLIC`, `NOOCR`, `CRASH`, `SILENT`) so a
+  test can make it refuse or fail. These tests run in a simulated browser DOM (happy-dom).
+- `vitest.config.mts` also makes `import "../main"` load `main.ts`, not the built `main.js`.
 
-- `tests/helpers/obsidian-mock.ts` stands in for the `obsidian` module (the npm package is
-  types only) with an in-memory vault, a `Notice` recorder, and a `requestUrl` stub.
-- `publish-net` and the signing-key tests redirect `os.homedir()` to a temp folder, so they never
-  read or overwrite your real device token or signing key.
+**No test touches the network or your real files.** The fake `requestUrl` is a mock each test
+programs; tests that read/write the token or signing key point `HOME` at a throwaway temp folder
+first; plugin tests use their own temp vault and fake engine.
 
-**Never live.** No test makes a network request or uses a real credential — every server call
-goes through the `requestUrl` stub. A new test that needs the network must mock it the same way.
-
-**Not covered by automated tests:** `main.ts` (the plugin class: menus, status bar, settings tab,
-running the engine via `convert.sh`). Use the live-vault QA below for that.
+**Not covered automatically:** the Publish modal's form UI, the real engine, and how things
+actually look in Obsidian. Those are covered by the manual live-vault QA below.
 
 ---
 
-# Live-vault QA
+# Live-vault QA (manual)
 
 ## Install (one time)
 Copy `manifest.json`, `main.js`, and `styles.css` into:

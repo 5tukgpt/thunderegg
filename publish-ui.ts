@@ -2,7 +2,8 @@
  * publish-ui.ts — Obsidian-facing UI for Publish: the confirm modal (the
  * load-bearing "exact JSON leaving your device" control) and fork-to-vault import.
  * Imports obsidian; the fork-import path is tested against a fake vault in
- * tests/fork-import-integration.test.ts. The modals are compile-checked only.
+ * tests/publish-ui-import.test.ts
+ * and tests/fork-import-hardening.test.ts. The modals are compile-checked only.
  */
 import { App, Modal, Notice, Setting, TFile, normalizePath } from "obsidian";
 import {
