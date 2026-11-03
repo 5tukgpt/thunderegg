@@ -13,6 +13,9 @@ npx tsc --noEmit  # type-check everything, tests included
 - Coverage (optional, not a saved dependency):
   `npm i --no-save @vitest/coverage-v8@4.1.8 && npx vitest run --coverage --coverage.include='*.ts'`
 - Works on macOS and Linux (npm installs the right native esbuild/rolldown binaries per OS).
+- **GitHub runs all of this on every push and pull request** (`.github/workflows/test.yml`):
+  the pre-land gate, the tests, and a check that a fresh build reproduces the committed
+  `main.js` exactly. If that last step fails, run `npm run build` and commit `main.js`.
 
 **What is covered:** the pure logic in `core.ts` and `publish-core.ts` (conversion rules, grades,
 bond graph, canvas→artifact transform, redaction/privacy gate, fork hardening, lineage), the

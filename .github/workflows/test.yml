@@ -1,0 +1,45 @@
+# Runs on every push and pull request. Green means:
+#  1. the manifest passes the directory's rules and the code typechecks (scripts/preland-gate.sh),
+#  2. every test passes, and
+#  3. a clean `npm ci` + `npm run build` reproduces the committed main.js byte-for-byte —
+#     the same "build verification" Obsidian's plugin directory runs after every release.
+#     A stale main.js is what makes that scan fail, so CI fails on it first.
+# No secrets are used and no test makes a network request (see TESTING.md).
+name: test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install exact dependencies
+        run: npm ci
+
+      - name: Manifest rules + typecheck (pre-land gate)
+        run: bash scripts/preland-gate.sh
+
+      - name: Tests
+        run: npm test
+
+      - name: Build reproduces the committed main.js
+        run: |
+          npm run build
+          if ! git diff --exit-code --stat -- main.js; then
+            echo "::error file=main.js::main.js does not match a fresh build. Run 'npm run build' and commit main.js."
+            exit 1
+          fi
