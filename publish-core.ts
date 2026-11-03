@@ -839,30 +839,43 @@ export interface ForkAttribution {
   lineage?: ForkLineage;
 }
 
+/** Collapse line breaks and other control characters to a space. Every value below comes from
+ *  the map being forked (a file anyone can write, or a server response); one embedded newline
+ *  would let it add its own frontmatter line — e.g. a forged `lineage_author_fingerprint:` ahead
+ *  of the real one, which parseLineageFrontmatter (first match wins) would then trust. */
+function oneLine(v: string): string {
+  // eslint-disable-next-line no-control-regex
+  return String(v ?? "").replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, " ");
+}
+
 /** The companion attribution note written next to every forked canvas. */
 export function buildAttributionNote(a: ForkAttribution): string {
+  const forkedFrom = oneLine(a.forkedFrom);
+  const author = oneLine(a.author);
+  const license = oneLine(a.license);
+  const sourceUrl = oneLine(a.sourceUrl);
   const lines: string[] = [
     "---",
-    `forked_from: ${a.forkedFrom}`,
-    `author: ${a.author}`,
-    `license: ${a.license}`,
-    `source_url: ${a.sourceUrl}`,
+    `forked_from: ${forkedFrom}`,
+    `author: ${author}`,
+    `license: ${license}`,
+    `source_url: ${sourceUrl}`,
   ];
   if (a.lineage) {
     lines.push(
-      `lineage_client_uuid: ${a.lineage.client_uuid}`,
-      `lineage_author_fingerprint: ${a.lineage.author_fingerprint}`,
-      `lineage_content_hash: ${a.lineage.content_hash}`,
+      `lineage_client_uuid: ${oneLine(a.lineage.client_uuid)}`,
+      `lineage_author_fingerprint: ${oneLine(a.lineage.author_fingerprint)}`,
+      `lineage_content_hash: ${oneLine(a.lineage.content_hash)}`,
     );
   }
   lines.push(
     "---",
     "",
-    `# ${a.displayTitle} (forked)`,
+    `# ${oneLine(a.displayTitle)} (forked)`,
     "",
-    `Forked from [@${a.author}](${a.sourceUrl}). License: ${a.license}.`,
+    `Forked from [@${author}](${sourceUrl}). License: ${license}.`,
     "",
-    `The map is in \`${a.canvasName}.canvas\` in this folder.`,
+    `The map is in \`${oneLine(a.canvasName)}.canvas\` in this folder.`,
     "",
   );
   return lines.join("\n");
